@@ -1,5 +1,6 @@
 """Worker: process incoming webhook events from social platforms."""
 
+import asyncio
 import uuid
 
 import structlog
@@ -96,7 +97,7 @@ async def _process_social_webhook(payload: dict, platform: str) -> dict:
                     )
                 elif event.event_type == "comment":
                     await _handle_comment_event(
-                        session, event, tenant_id
+                        session, event, tenant_id, brand_id, account
                     )
                 elif event.event_type == "status_update":
                     await _handle_status_event(session, event)
@@ -207,10 +208,11 @@ async def _deliver_outbound_message(
         logger.exception("message_delivery_failed", platform=platform)
 
 
-async def _handle_comment_event(session, event, tenant_id):
-    """Store incoming comment — reply logic is handled separately."""
+async def _handle_comment_event(session, event, tenant_id, brand_id=None, account=None):
+    """Store incoming comment and auto-reply using SocialReplyAgent if enabled."""
     from app.models.comment import Comment
     from app.models.post import Post
+    from app.services.feature_flag_service import is_enabled
     from sqlalchemy import select
 
     # Find the post by external_id
@@ -237,6 +239,125 @@ async def _handle_comment_event(session, event, tenant_id):
     await session.flush()
 
     logger.info("comment_stored", external_id=event.external_id, platform=event.platform)
+
+    # === Auto-reply logic ===
+
+    # Skip if the comment is from the page itself (don't reply to ourselves)
+    if account and event.author_id == account.platform_account_id:
+        logger.debug("comment_from_own_page, skipping auto-reply", external_id=event.external_id)
+        return
+
+    # Check feature flag
+    if not await is_enabled("auto_reply", str(tenant_id), session):
+        logger.debug("auto_reply_disabled", tenant_id=str(tenant_id))
+        return
+
+    # Skip if no comment text
+    if not event.content or not event.content.strip():
+        return
+
+    try:
+        from app.agents.registry import get_orchestrator
+        from app.services.brand_service import BrandService
+        from app.services.audit_service import AuditService
+        from app.core.security import secret_manager
+
+        # Get brand context for the agent
+        brand_ctx = {}
+        if brand_id:
+            try:
+                brand_svc = BrandService(session, tenant_id)
+                brand_ctx = await brand_svc.get_brand_with_profile(brand_id)
+            except Exception:
+                logger.warning("auto_reply_brand_context_failed", brand_id=str(brand_id))
+
+        # Run the SocialReplyAgent
+        orchestrator = get_orchestrator()
+        reply_agent = orchestrator.agents.get("social_reply")
+        if not reply_agent:
+            logger.error("social_reply_agent_not_found")
+            return
+
+        result = await reply_agent.run({
+            "comment_text": event.content,
+            "post_content": "",
+            "brand_context": brand_ctx,
+            "platform": event.platform,
+            "customer_name": event.author_name or "",
+        })
+
+        if not result.success:
+            logger.warning("auto_reply_agent_failed", output=result.output)
+            return
+
+        reply_text = result.output.get("reply_text", "")
+        action = result.output.get("action", "reply")
+
+        # Don't post a reply if action is "hide" or no text
+        if action == "hide" or not reply_text or not reply_text.strip():
+            logger.info(
+                "auto_reply_skipped",
+                action=action,
+                comment_type=result.output.get("comment_type"),
+                external_id=event.external_id,
+            )
+            return
+
+        # Add a 3-second delay before replying (to seem more natural)
+        await asyncio.sleep(3)
+
+        # Post the reply via the Facebook connector
+        if account and event.platform == "facebook":
+            token = secret_manager.decrypt(account.access_token_encrypted)
+            from app.connectors.facebook import FacebookConnector
+            fb_connector = FacebookConnector(
+                page_id=account.platform_account_id,
+                access_token=token,
+            )
+            publish_result = await fb_connector.reply_to_comment(
+                comment_id=event.external_id,
+                content=reply_text,
+            )
+
+            if publish_result.success:
+                logger.info(
+                    "auto_reply_posted",
+                    comment_id=event.external_id,
+                    reply_id=publish_result.external_id,
+                    comment_type=result.output.get("comment_type"),
+                )
+            else:
+                logger.error(
+                    "auto_reply_post_failed",
+                    comment_id=event.external_id,
+                    error=publish_result.error,
+                )
+                return
+
+            # Log the auto-reply in the audit
+            audit = AuditService(session)
+            await audit.log(
+                tenant_id=tenant_id,
+                action="comment.auto_reply",
+                resource_type="comment",
+                resource_id=comment.id if hasattr(comment, "id") else None,
+                metadata={
+                    "comment_external_id": event.external_id,
+                    "reply_external_id": publish_result.external_id,
+                    "comment_type": result.output.get("comment_type"),
+                    "reply_text": reply_text[:500],
+                    "confidence": result.confidence_score,
+                    "model_used": result.model_used,
+                    "platform": event.platform,
+                },
+            )
+
+    except Exception as e:
+        logger.exception(
+            "auto_reply_error",
+            comment_id=event.external_id,
+            error=str(e),
+        )
 
 
 async def _handle_status_event(session, event):

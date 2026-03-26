@@ -24,6 +24,7 @@ from app.models.customer_profile import CustomerProfile
 from app.models.design_template import DesignTemplate, BrandDesignDNA
 from app.models.chat import ChatMessage
 from app.models.feature_flag import FeatureFlag
+from app.models.commerce import Product, Order, OrderStatus, PaymentMethod, LoyaltyPoints
 
 __all__ = [
     "Base",
@@ -63,4 +64,9 @@ __all__ = [
     "DesignTemplate",
     "BrandDesignDNA",
     "ChatMessage",
+    "Product",
+    "Order",
+    "OrderStatus",
+    "PaymentMethod",
+    "LoyaltyPoints",
 ]

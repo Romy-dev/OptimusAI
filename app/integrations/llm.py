@@ -326,6 +326,15 @@ TASK_MODEL_CASCADE = {
         "temperature": 0.3,
         "max_tokens": 1500,
     },
+    "commerce": {
+        "cascade": [
+            ("gemini", "gemini-3-flash-preview"),
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("ollama", "mistral:latest"),
+        ],
+        "temperature": 0.4,
+        "max_tokens": 800,
+    },
 }
 
 

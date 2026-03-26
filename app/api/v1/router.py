@@ -15,6 +15,8 @@ from app.api.v1.design_templates import router as design_templates_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.coach import router as coach_router
 from app.api.v1.stories import router as stories_router
+from app.api.v1.commerce import router as commerce_router
+from app.api.v1.roi import router as roi_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(auth_router)
@@ -32,6 +34,8 @@ api_v1_router.include_router(design_templates_router)
 api_v1_router.include_router(chat_router)
 api_v1_router.include_router(coach_router)
 api_v1_router.include_router(stories_router)
+api_v1_router.include_router(commerce_router)
+api_v1_router.include_router(roi_router)
 
 # Future routers:
 # from app.api.v1.social_accounts import router as social_accounts_router

@@ -31,6 +31,11 @@ class SlideImageRequest(BaseModel):
     slide_index: int | None = None  # None = all slides
 
 
+class StoryConvertRequest(BaseModel):
+    brief: str
+    brand_id: str
+
+
 @router.post("/plan")
 async def plan_story(
     body: StoryRequest,
@@ -237,4 +242,199 @@ async def generate_video(
         "slides_count": len(slide_images),
         "has_music": music_path is not None,
         "size_kb": len(video_bytes) // 1024,
+    }
+
+
+@router.post("/convert-formats")
+async def convert_to_all_formats(
+    body: StoryConvertRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Convert a story brief into 6 platform-optimized formats.
+
+    Uses StoryAgent for story/reel slide plans, CopywriterAgent for
+    platform-specific text, and PosterAgent for image layout plans at
+    different aspect ratios.  No images are actually rendered — the user
+    can choose which formats to render afterwards.
+    """
+    import asyncio
+    from app.agents.registry import get_orchestrator
+    from app.services.brand_service import BrandService
+
+    # Get brand context
+    brand_svc = BrandService(session, user.tenant_id)
+    try:
+        brand_ctx = await brand_svc.get_brand_with_profile(body.brand_id)
+    except Exception:
+        brand_ctx = {}
+
+    orchestrator = get_orchestrator()
+    story_agent = orchestrator.agents.get("story")
+    copywriter_agent = orchestrator.agents.get("copywriter")
+    poster_agent = orchestrator.agents.get("poster")
+
+    # --- Run agents concurrently where possible ---
+
+    # 1. StoryAgent: Instagram story plan (9:16 slides)
+    story_task = story_agent.run({
+        "brief": body.brief,
+        "platform": "instagram",
+        "brand_context": brand_ctx,
+    })
+
+    # 2. CopywriterAgent: Facebook post text
+    fb_copy_task = copywriter_agent.run({
+        "brief": body.brief,
+        "channel": "facebook",
+        "objective": "engagement",
+        "brand_context": brand_ctx,
+    })
+
+    # 3. CopywriterAgent: TikTok post text
+    tiktok_copy_task = copywriter_agent.run({
+        "brief": body.brief,
+        "channel": "tiktok",
+        "objective": "engagement",
+        "brand_context": brand_ctx,
+    })
+
+    # 4. PosterAgent: Facebook square image plan (1:1)
+    fb_poster_task = poster_agent.run({
+        "brief": body.brief,
+        "brand_id": body.brand_id,
+        "tenant_id": str(user.tenant_id),
+        "aspect_ratio": "1:1",
+        "brand_context": brand_ctx,
+        "plan_only": True,
+    })
+
+    # 5. PosterAgent: Vertical image plan for WhatsApp/TikTok (9:16)
+    vertical_poster_task = poster_agent.run({
+        "brief": body.brief,
+        "brand_id": body.brand_id,
+        "tenant_id": str(user.tenant_id),
+        "aspect_ratio": "9:16",
+        "brand_context": brand_ctx,
+        "plan_only": True,
+    })
+
+    # 6. PosterAgent: Website banner plan (16:9)
+    banner_poster_task = poster_agent.run({
+        "brief": body.brief,
+        "brand_id": body.brand_id,
+        "tenant_id": str(user.tenant_id),
+        "aspect_ratio": "16:9",
+        "brand_context": brand_ctx,
+        "plan_only": True,
+    })
+
+    # Gather all results
+    (
+        story_result,
+        fb_copy_result,
+        tiktok_copy_result,
+        fb_poster_result,
+        vertical_poster_result,
+        banner_poster_result,
+    ) = await asyncio.gather(
+        story_task,
+        fb_copy_task,
+        tiktok_copy_task,
+        fb_poster_task,
+        vertical_poster_task,
+        banner_poster_task,
+        return_exceptions=True,
+    )
+
+    # --- Assemble the 6 formats ---
+
+    formats = {}
+
+    # Instagram Story (slides from StoryAgent)
+    if not isinstance(story_result, Exception) and story_result.success:
+        story_plan = story_result.output.get("story_plan", {})
+        formats["instagram_story"] = {
+            "slides": story_plan.get("slides", []),
+            "aspect_ratio": "9:16",
+            "total_slides": story_result.output.get("total_slides", 0),
+            "total_duration_s": story_result.output.get("total_duration_s", 0),
+            "color_scheme": story_plan.get("color_scheme"),
+            "mood": story_plan.get("mood"),
+        }
+    else:
+        formats["instagram_story"] = {"error": "Story generation failed", "aspect_ratio": "9:16"}
+
+    # Instagram Reel (reuse story slides as a video storyboard)
+    if not isinstance(story_result, Exception) and story_result.success:
+        story_plan = story_result.output.get("story_plan", {})
+        formats["instagram_reel"] = {
+            "slides": story_plan.get("slides", []),
+            "aspect_ratio": "9:16",
+            "duration": story_result.output.get("total_duration_s", 30),
+            "music_mood": story_result.output.get("music_mood", "upbeat"),
+            "note": "Use /stories/render + /stories/video to produce the final video",
+        }
+    else:
+        formats["instagram_reel"] = {"error": "Reel generation failed", "aspect_ratio": "9:16"}
+
+    # Facebook Post (copy + square image plan)
+    fb_text = ""
+    fb_hashtags = []
+    fb_media_suggestion = ""
+    if not isinstance(fb_copy_result, Exception) and fb_copy_result.success:
+        fb_text = fb_copy_result.output.get("content", "")
+        fb_hashtags = fb_copy_result.output.get("hashtags", [])
+        fb_media_suggestion = fb_copy_result.output.get("media_suggestion", "")
+
+    fb_image_plan = None
+    if not isinstance(fb_poster_result, Exception) and fb_poster_result.success:
+        fb_image_plan = fb_poster_result.output.get("layout_plan") or fb_poster_result.output
+
+    formats["facebook_post"] = {
+        "content_text": fb_text,
+        "hashtags": fb_hashtags,
+        "media_suggestion": fb_media_suggestion,
+        "image_plan": fb_image_plan,
+        "aspect_ratio": "1:1",
+    }
+
+    # WhatsApp Status (vertical image plan)
+    vertical_image_plan = None
+    if not isinstance(vertical_poster_result, Exception) and vertical_poster_result.success:
+        vertical_image_plan = vertical_poster_result.output.get("layout_plan") or vertical_poster_result.output
+
+    formats["whatsapp_status"] = {
+        "image_plan": vertical_image_plan,
+        "aspect_ratio": "9:16",
+    }
+
+    # TikTok Post (copy + vertical image plan)
+    tiktok_text = ""
+    tiktok_hashtags = []
+    if not isinstance(tiktok_copy_result, Exception) and tiktok_copy_result.success:
+        tiktok_text = tiktok_copy_result.output.get("content", "")
+        tiktok_hashtags = tiktok_copy_result.output.get("hashtags", [])
+
+    formats["tiktok_post"] = {
+        "content_text": tiktok_text,
+        "hashtags": tiktok_hashtags,
+        "image_plan": vertical_image_plan,
+        "aspect_ratio": "9:16",
+    }
+
+    # Website Banner (landscape image plan)
+    banner_image_plan = None
+    if not isinstance(banner_poster_result, Exception) and banner_poster_result.success:
+        banner_image_plan = banner_poster_result.output.get("layout_plan") or banner_poster_result.output
+
+    formats["website_banner"] = {
+        "image_plan": banner_image_plan,
+        "aspect_ratio": "16:9",
+    }
+
+    return {
+        "brief": body.brief,
+        "brand_id": body.brand_id,
+        "formats": formats,
     }

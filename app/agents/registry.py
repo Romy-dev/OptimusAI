@@ -20,6 +20,8 @@ from app.agents.support import SupportAgent
 from app.agents.timing import TimingAgent
 from app.agents.coach import CoachAgent
 from app.agents.story import StoryAgent
+from app.agents.trend_surfer import TrendSurferAgent
+from app.agents.commerce import CommerceAgent
 
 
 def create_agent_registry() -> dict[str, BaseAgent]:
@@ -50,6 +52,10 @@ def create_agent_registry() -> dict[str, BaseAgent]:
         "coach": CoachAgent(),
         # Story
         "story": StoryAgent(),
+        # Trend Surfer
+        "trend_surfer": TrendSurferAgent(),
+        # Commerce
+        "commerce": CommerceAgent(),
     }
 
 
