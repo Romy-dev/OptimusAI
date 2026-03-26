@@ -19,6 +19,7 @@ from app.agents.strategist import ContentStrategistAgent
 from app.agents.support import SupportAgent
 from app.agents.timing import TimingAgent
 from app.agents.coach import CoachAgent
+from app.agents.story import StoryAgent
 
 
 def create_agent_registry() -> dict[str, BaseAgent]:
@@ -47,6 +48,8 @@ def create_agent_registry() -> dict[str, BaseAgent]:
         "design_analyzer": DesignAnalyzerAgent(),
         # Coach
         "coach": CoachAgent(),
+        # Story
+        "story": StoryAgent(),
     }
 
 

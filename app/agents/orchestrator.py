@@ -34,6 +34,8 @@ class TaskType(str, Enum):
     ANALYZE_DESIGN = "analyze_design"
     # Coach
     COACH = "coach"
+    # Story
+    GENERATE_STORY = "generate_story"
 
 
 ROUTING_TABLE: dict[TaskType, str] = {
@@ -59,6 +61,7 @@ ROUTING_TABLE: dict[TaskType, str] = {
     # Design
     TaskType.ANALYZE_DESIGN: "design_analyzer",
     TaskType.COACH: "coach",
+    TaskType.GENERATE_STORY: "story",
 }
 
 
