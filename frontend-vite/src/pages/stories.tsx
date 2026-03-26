@@ -110,6 +110,39 @@ export default function StoriesPage() {
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const autoPlayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Restore state from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("optimus-story-state");
+      if (saved) {
+        const s = JSON.parse(saved);
+        if (s.storyPlan?.slides?.length) {
+          setStoryPlan(s.storyPlan);
+          setBrief(s.brief || "");
+          setPlatform(s.platform || "instagram");
+          setBrandId(s.brandId || "");
+          setMusicMood(s.musicMood || "upbeat");
+          setVideoUrl(s.videoUrl || null);
+          setActiveSlide(0);
+          // Determine state from data
+          const hasRendered = s.storyPlan.slides.some((sl: any) => sl.image_url);
+          setPageState(s.videoUrl ? "video_ready" : hasRendered ? "rendered" : "planned");
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Persist state to localStorage on changes
+  useEffect(() => {
+    if (storyPlan && pageState !== "initial" && pageState !== "planning") {
+      try {
+        localStorage.setItem("optimus-story-state", JSON.stringify({
+          storyPlan, brief, platform, brandId, musicMood, videoUrl,
+        }));
+      } catch {}
+    }
+  }, [storyPlan, brief, platform, brandId, musicMood, videoUrl, pageState]);
+
   // Auto-select first brand
   useEffect(() => {
     if (brandList?.length && !brandId) {
@@ -201,7 +234,19 @@ export default function StoriesPage() {
     if (!storyPlan) return;
     setPageState("rendering");
     try {
-      const result = await storiesApi.video({ ...storyPlan, music_mood: musicMood });
+      // Build the plan with rendered slide URLs + music mood
+      const planForVideo = {
+        slides: storyPlan.slides.map((s) => ({
+          ...s,
+          image_url: s.image_url,
+          s3_key: s.image_url?.includes("/optimusai/") ? s.image_url.split("/optimusai/")[1] : undefined,
+        })),
+        music_mood: musicMood,
+      };
+      const result = await storiesApi.video(planForVideo);
+      if (result.error) {
+        throw new Error(result.error);
+      }
       setVideoUrl(result.video_url || result.url);
       setPageState("video_ready");
       toast.success("Video generee avec succes !");
@@ -718,6 +763,7 @@ export default function StoriesPage() {
                       setVideoUrl(null);
                       setActiveSlide(0);
                       setRenderProgress({});
+                      localStorage.removeItem("optimus-story-state");
                     }}
                     className="flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold w-full bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
                   >

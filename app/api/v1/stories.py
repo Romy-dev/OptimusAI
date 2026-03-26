@@ -1,3 +1,4 @@
+
 """Story API — generate multi-slide stories with optional video assembly."""
 
 import io
@@ -153,6 +154,13 @@ async def generate_video(
     plan = body.story_plan
     slides = plan.get("slides", [])
     rendered = plan.get("rendered_slides", [])
+
+    # If no separate rendered_slides, extract from slides with image_url
+    if not rendered:
+        rendered = [
+            {"slide_index": i, "role": s.get("role"), "image_url": s.get("image_url"), "s3_key": s.get("s3_key")}
+            for i, s in enumerate(slides) if s.get("image_url")
+        ]
 
     if not rendered:
         return {"error": "No rendered slides. Call /stories/render first."}
