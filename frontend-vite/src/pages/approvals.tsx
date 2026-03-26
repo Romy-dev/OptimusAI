@@ -380,8 +380,31 @@ function ApprovalCard({
         )}
       </div>
 
-      {/* Actions bar */}
+      {/* Actions bar / History info */}
       <div className="border-t border-gray-50 px-5 py-3.5 bg-gray-50/30">
+        {/* History info for reviewed items */}
+        {item.status !== "pending" && (
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold",
+              item.status === "approved" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+            )}>
+              {item.status === "approved" ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+              {item.status === "approved" ? "Approuvé" : "Rejeté"}
+            </div>
+            {(item as any).review_note && (
+              <span className="text-xs text-gray-500 italic">"{(item as any).review_note}"</span>
+            )}
+            {(item as any).reviewed_at && (
+              <span className="text-xs text-gray-400 ml-auto">
+                {new Date((item as any).reviewed_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Action buttons for pending items */}
+        {item.status === "pending" && (
         <div className="flex items-center gap-3">
           {/* Approve button */}
           <button
@@ -456,6 +479,7 @@ function ApprovalCard({
             className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-brand-300 focus:ring-2 focus:ring-brand-100 focus:outline-none resize-none transition-all"
           />
         </div>
+        )}
       </div>
     </div>
   );
@@ -502,8 +526,21 @@ function ApprovalSkeleton() {
 
 // ─── Main page component ─────────────────────────────────
 
+type TabKey = "pending" | "approved" | "rejected" | "all";
+
+const STATUS_TABS: { key: TabKey; label: string; icon: typeof Clock }[] = [
+  { key: "pending", label: "En attente", icon: Clock },
+  { key: "approved", label: "Approuvés", icon: CheckCircle },
+  { key: "rejected", label: "Rejetés", icon: XCircle },
+  { key: "all", label: "Tout", icon: Filter },
+];
+
 export default function ApprovalsPage() {
-  const { data: approvalList, loading, refetch } = useApi(() => approvalsApi.list(), []);
+  const [activeTab, setActiveTab] = useState<TabKey>("pending");
+  const { data: approvalList, loading, refetch } = useApi(
+    () => approvalsApi.list(activeTab === "pending" ? undefined : activeTab),
+    [activeTab],
+  );
   const { data: brandList } = useApi(() => brandsApi.list(), []);
 
   const [postCache, setPostCache] = useState<Record<string, Post>>({});
@@ -732,18 +769,41 @@ export default function ApprovalsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Validations</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {items.length > 0
+            {activeTab === "pending" && items.length > 0
               ? `${items.length} contenu${items.length > 1 ? "s" : ""} en attente de votre approbation`
-              : "Tout est a jour"}
+              : activeTab === "approved"
+              ? `${items.length} contenu${items.length > 1 ? "s" : ""} approuve${items.length > 1 ? "s" : ""}`
+              : activeTab === "rejected"
+              ? `${items.length} contenu${items.length > 1 ? "s" : ""} rejete${items.length > 1 ? "s" : ""}`
+              : `${items.length} validation${items.length > 1 ? "s" : ""} au total`}
           </p>
         </div>
-        {items.length > 0 && (
+        {activeTab === "pending" && items.length > 0 && (
           <ConfidenceFilter
             value={confidenceFilter}
             onChange={setConfidenceFilter}
             counts={confidenceCounts}
           />
         )}
+      </div>
+
+      {/* Status tabs */}
+      <div className="flex gap-1 rounded-xl bg-gray-100/80 p-1">
+        {STATUS_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => { setActiveTab(tab.key); setSelected(new Set()); }}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+              activeTab === tab.key
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+            )}
+          >
+            <tab.icon className="h-3.5 w-3.5" />
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Bulk actions bar */}

@@ -326,7 +326,7 @@ export const posts = {
 };
 
 export const approvals = {
-  list: () => request<Approval[]>("/approvals"),
+  list: (status?: string) => request<Approval[]>(`/approvals${status ? `?status=${status}` : ""}`),
   approve: (id: string, note?: string) =>
     request<any>(`/approvals/${id}/approve`, { method: "POST", body: note ? { note } : {} }),
   reject: (id: string, note: string) =>
