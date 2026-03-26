@@ -272,6 +272,51 @@ TASK_MODEL_CASCADE = {
         "temperature": 0.3,
         "max_tokens": 500,
     },
+    "sales": {
+        "cascade": [
+            ("gemini", "gemini-3-flash-preview"),
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("ollama", "mistral:latest"),
+        ],
+        "temperature": 0.5,
+        "max_tokens": 600,
+    },
+    "followup": {
+        "cascade": [
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("gemini", "gemini-2.5-flash-lite"),
+            ("ollama", "mistral:latest"),
+        ],
+        "temperature": 0.5,
+        "max_tokens": 400,
+    },
+    "strategy": {
+        "cascade": [
+            ("gemini", "gemini-3-flash-preview"),
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("ollama", "mistral:latest"),
+        ],
+        "temperature": 0.7,
+        "max_tokens": 2000,
+    },
+    "timing": {
+        "cascade": [
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("gemini", "gemini-2.5-flash-lite"),
+            ("ollama", "mistral:latest"),
+        ],
+        "temperature": 0.3,
+        "max_tokens": 300,
+    },
+    "analysis": {
+        "cascade": [
+            ("gemini", "gemini-3-flash-preview"),
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("ollama", "mistral:latest"),
+        ],
+        "temperature": 0.3,
+        "max_tokens": 1500,
+    },
 }
 
 
