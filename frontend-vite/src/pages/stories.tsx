@@ -79,6 +79,18 @@ const PLANNING_STEPS = [
   { label: "Finalisation", icon: CheckCircle, duration: 3 },
 ];
 
+// Quick Action templates — one-click story briefs
+const QUICK_ACTIONS = [
+  { label: "Promo Flash", emoji: "🔥", brief: "Promo flash -30% pendant 24h seulement, ne ratez pas cette offre exceptionnelle", mood: "urgent" },
+  { label: "Nouveau Produit", emoji: "✨", brief: "Lancement de notre nouveau produit phare, découvrez ses caractéristiques uniques", mood: "inspiring" },
+  { label: "Événement", emoji: "🎉", brief: "Grand événement ce weekend, venez nombreux, ambiance garantie et surprises", mood: "festive" },
+  { label: "Témoignage", emoji: "💬", brief: "Nos clients témoignent de leur satisfaction, découvrez leurs avis authentiques", mood: "warm" },
+  { label: "Behind the Scenes", emoji: "🎬", brief: "Découvrez les coulisses de notre entreprise, notre équipe et notre savoir-faire", mood: "chill" },
+  { label: "Astuce du Jour", emoji: "💡", brief: "Astuce du jour pour bien utiliser nos produits et en tirer le meilleur parti", mood: "upbeat" },
+  { label: "Jeu Concours", emoji: "🎁", brief: "Grand jeu concours, participez pour gagner des lots exceptionnels, règles simples", mood: "festive" },
+  { label: "Fête / Célébration", emoji: "🌙", brief: "Bonne fête à tous, que cette journée soit remplie de joie et de bonheur", mood: "inspiring" },
+];
+
 // ─── Main Page ───────────────────────────────────────────────
 
 export default function StoriesPage() {
@@ -199,6 +211,71 @@ export default function StoriesPage() {
     }
   };
 
+  // Quick action: fill brief and auto-generate
+  const handleQuickAction = (qa: typeof QUICK_ACTIONS[0]) => {
+    setBrief(qa.brief);
+    setMusicMood(qa.mood || "upbeat");
+  };
+
+  // One-click: plan + render all slides
+  const handleOneClick = async () => {
+    if (!brief.trim() || !brandId) {
+      toast.error("Remplissez le brief et sélectionnez une marque");
+      return;
+    }
+    setPageState("planning");
+    setError(null);
+    setStoryPlan(null);
+    setActiveSlide(0);
+    setRenderProgress({});
+    setVideoUrl(null);
+
+    try {
+      // Step 1: Plan
+      const result = await storiesApi.plan(brief, brandId, platform);
+      const plan: StoryPlan = {
+        slides: (result.slides || result.story_plan?.slides || []).map((s: any, i: number) => ({
+          index: i,
+          role: s.role || ["hook", "detail", "urgency", "cta"][i % 4],
+          headline: s.headline || s.title || `Slide ${i + 1}`,
+          subtext: s.subtext || s.description || "",
+          duration: s.duration || 3,
+          animation: s.animation || "fade_in",
+          image_url: s.image_url,
+          rendered: false,
+        })),
+        platform,
+        brand_id: brandId,
+        theme: result.theme,
+      };
+      setStoryPlan(plan);
+      setPageState("rendering");
+      toast.success(`${plan.slides.length} slides planifiées, rendu en cours...`);
+
+      // Step 2: Render all
+      for (let i = 0; i < plan.slides.length; i++) {
+        setRenderProgress((prev) => ({ ...prev, [i]: true }));
+        try {
+          const renderResult = await storiesApi.render(plan, brandId, i);
+          plan.slides[i].image_url = renderResult.image_url || renderResult.slides?.[i]?.image_url;
+          plan.slides[i].rendered = true;
+          setStoryPlan({ ...plan });
+        } catch {
+          // Continue with next slide
+        } finally {
+          setRenderProgress((prev) => ({ ...prev, [i]: false }));
+        }
+      }
+
+      setStoryPlan({ ...plan });
+      setPageState("rendered");
+      toast.success("Story complete !");
+    } catch (err: any) {
+      setError(err.message || "Erreur");
+      setPageState("initial");
+    }
+  };
+
   const updateSlide = useCallback((field: string, value: any) => {
     setStoryPlan((prev) => {
       if (!prev) return prev;
@@ -226,6 +303,28 @@ export default function StoriesPage() {
           </div>
         </div>
       </div>
+
+      {/* Quick Actions */}
+      {pageState === "initial" && (
+        <div className="mb-6">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Actions rapides</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {QUICK_ACTIONS.map((qa) => (
+              <button
+                key={qa.label}
+                onClick={() => handleQuickAction(qa)}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl border border-gray-100 px-3 py-2.5 text-left transition-all hover:border-brand-200 hover:bg-brand-50/30 hover:shadow-sm",
+                  brief === qa.brief && "border-brand-400 bg-brand-50 shadow-sm"
+                )}
+              >
+                <span className="text-lg">{qa.emoji}</span>
+                <span className="text-xs font-medium text-gray-700">{qa.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Two-column layout */}
       <div className="flex gap-6 items-start">
@@ -288,18 +387,31 @@ export default function StoriesPage() {
               </div>
             )}
 
-            {/* Generate button */}
-            <button
-              onClick={handleGenerate}
-              disabled={!brief.trim() || !brandId || pageState === "planning"}
-              className="btn-primary w-full py-3 text-sm font-bold"
-            >
-              {pageState === "planning" ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Planification en cours...</>
-              ) : (
-                <><Sparkles className="h-4 w-4" /> Generer la Story</>
-              )}
-            </button>
+            {/* Generate buttons */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleGenerate}
+                disabled={!brief.trim() || !brandId || pageState === "planning" || pageState === "rendering"}
+                className="btn-primary py-3 text-sm font-bold"
+              >
+                {pageState === "planning" ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Planification...</>
+                ) : (
+                  <><Sparkles className="h-4 w-4" /> Planifier</>
+                )}
+              </button>
+              <button
+                onClick={handleOneClick}
+                disabled={!brief.trim() || !brandId || pageState === "planning" || pageState === "rendering"}
+                className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-500 to-purple-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 hover:shadow-xl transition-all disabled:opacity-50"
+              >
+                {pageState === "rendering" ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Rendu en cours...</>
+                ) : (
+                  <><Wand2 className="h-4 w-4" /> Tout en un</>
+                )}
+              </button>
+            </div>
 
             {error && (
               <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-600">
@@ -598,6 +710,19 @@ export default function StoriesPage() {
                   >
                     <Download className="h-4 w-4" /> Telecharger la video
                   </a>
+                  <button
+                    onClick={() => {
+                      setPageState("initial");
+                      setBrief("");
+                      setStoryPlan(null);
+                      setVideoUrl(null);
+                      setActiveSlide(0);
+                      setRenderProgress({});
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold w-full bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
+                  >
+                    <RefreshCw className="h-4 w-4" /> Nouvelle Story
+                  </button>
                 </div>
               )}
             </div>
