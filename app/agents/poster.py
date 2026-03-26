@@ -185,6 +185,60 @@ class PosterAgent(BaseAgent):
             return None
 
     # ------------------------------------------------------------------
+    # System template fallback
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _get_system_template_bg(industry: str, tenant_id: str) -> bytes | None:
+        """Download a random system template image matching the industry as background."""
+        import random
+        from app.models.design_template import DesignTemplate
+
+        try:
+            async with async_session_factory() as session:
+                # Find system templates for this industry
+                industry_key = (industry or "generic").lower().strip()
+                stmt = (
+                    select(DesignTemplate)
+                    .where(
+                        DesignTemplate.analysis_status == "system_default",
+                        DesignTemplate.s3_key.ilike(f"%/{industry_key}/%"),
+                    )
+                )
+                result = await session.execute(stmt)
+                templates = result.scalars().all()
+
+                # Fallback to generic if no match
+                if not templates:
+                    stmt = (
+                        select(DesignTemplate)
+                        .where(
+                            DesignTemplate.analysis_status == "system_default",
+                            DesignTemplate.s3_key.ilike("%/generic/%"),
+                        )
+                    )
+                    result = await session.execute(stmt)
+                    templates = result.scalars().all()
+
+                if not templates:
+                    return None
+
+                # Pick a random template
+                chosen = random.choice(templates)
+                import asyncio
+                data = await asyncio.to_thread(
+                    lambda: storage_service.client.get_object(
+                        Bucket=storage_service.bucket, Key=chosen.s3_key
+                    )["Body"].read()
+                )
+                logger.info("system_template_bg_used", s3_key=chosen.s3_key, size=len(data))
+                return data
+
+        except Exception as e:
+            logger.warning("system_template_bg_failed", error=str(e))
+            return None
+
+    # ------------------------------------------------------------------
     # Prompt construction
     # ------------------------------------------------------------------
 
@@ -316,6 +370,7 @@ class PosterAgent(BaseAgent):
         logger.info("poster_plan", plan=poster_plan, has_dna=dna is not None)
 
         # 2. Generate the background image -----------------------------------
+        bg_bytes = None
         try:
             client = get_image_gen_client()
             gen_request = ImageGenRequest(
@@ -330,10 +385,18 @@ class PosterAgent(BaseAgent):
             else:
                 bg_bytes = await download_image(gen_response.filename)
         except Exception as e:
-            logger.error("poster_bg_generation_failed", error=str(e))
+            logger.warning("poster_bg_generation_failed_trying_template", error=str(e))
+
+        # Fallback: use a system template image as background
+        if bg_bytes is None:
+            bg_bytes = await self._get_system_template_bg(
+                brand.get("industry", context.get("industry", "")), tenant_id
+            )
+
+        if bg_bytes is None:
             return AgentResult(
                 success=False,
-                output={"error": f"Image generation failed: {e}"},
+                output={"error": "No background image available (FLUX and template fallback both failed)"},
                 agent_name=self.name,
             )
 

@@ -19,6 +19,7 @@ const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const SettingsPage = lazy(() => import("./pages/settings"));
 const ConnectionsPage = lazy(() => import("./pages/connections"));
 const TemplatesPage = lazy(() => import("./pages/templates"));
+const AnalyticsPage = lazy(() => import("./pages/analytics"));
 const LegalPage = lazy(() => import("./pages/legal"));
 const LandingPage = lazy(() => import("./pages/landing"));
 
@@ -50,6 +51,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/posts" element={<ProtectedRoute><PostsPage /></ProtectedRoute>} />
             <Route path="/gallery" element={<ProtectedRoute><GalleryPage /></ProtectedRoute>} />
             <Route path="/inbox" element={<ProtectedRoute fullHeight><InboxPage /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
             <Route path="/approvals" element={<ProtectedRoute><ApprovalsPage /></ProtectedRoute>} />
             <Route path="/brands" element={<ProtectedRoute><BrandsPage /></ProtectedRoute>} />
             <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />

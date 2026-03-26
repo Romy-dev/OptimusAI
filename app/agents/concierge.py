@@ -88,6 +88,24 @@ class ConciergeAgent(BaseAgent):
 
         parsed = parse_llm_output(response.content, ConciergeOutput)
 
+        # Fallback: if parser returned empty message, use raw LLM text
+        if not parsed or not parsed.message:
+            raw_text = response.content.strip()
+            # Strip any JSON wrapping
+            if raw_text.startswith("{"):
+                import json as _json
+                try:
+                    d = _json.loads(raw_text)
+                    parsed = ConciergeOutput(**d)
+                except Exception:
+                    pass
+            if not parsed or not parsed.message:
+                # Use raw text as message (LLM didn't return JSON)
+                clean = raw_text
+                for prefix in ("```json", "```", "{", "}"):
+                    clean = clean.replace(prefix, "")
+                parsed = ConciergeOutput(message=clean.strip()[:500] or "Comment puis-je vous aider ?")
+
         # Execute action if specified and not needing confirmation
         action_result = None
         if parsed.action and not parsed.needs_confirmation:
