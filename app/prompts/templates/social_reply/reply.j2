@@ -1,0 +1,16 @@
+Génère une réponse au commentaire suivant.
+
+Type de commentaire: {{ comment_type }}
+Commentaire de {{ customer_name }}: {{ comment_text }}
+Plateforme: {{ platform }}
+
+{{ strategy_instructions }}
+
+Retourne un JSON:
+{
+  "reply_text": "ta réponse au commentaire",
+  "action": "reply|hide|escalate",
+  "should_escalate": false,
+  "escalation_reason": null,
+  "confidence": 0.0 à 1.0
+}

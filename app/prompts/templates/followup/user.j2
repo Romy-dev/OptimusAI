@@ -1,0 +1,13 @@
+Génère un message de suivi {{ followup_type }} pour ce client.
+Canal: {{ channel }}
+Jours depuis dernier contact: {{ days_since_contact }}
+
+{{ additional_context | default("") }}
+
+Retourne en JSON:
+{
+  "message": "le message de suivi personnalisé",
+  "followup_type": "{{ followup_type }}",
+  "suggested_next_days": nombre de jours avant le prochain suivi,
+  "priority": "high" | "medium" | "low"
+}

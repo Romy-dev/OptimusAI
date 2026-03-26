@@ -1,0 +1,22 @@
+## BRIEF DU CLIENT
+{{ brief }}
+
+## PARAMETRES
+- Canal : {{ channel }}
+- Objectif : {{ objective }}
+{% if additional_instructions %}- Instructions supplementaires : {{ additional_instructions }}{% endif %}
+
+## CE QUE TU DOIS PRODUIRE
+Un post marketing PRET A PUBLIER pour {{ channel }}, en respectant toutes les regles du system prompt.
+
+## CHECKLIST OBLIGATOIRE
+1. ✅ Ecrit 100% en {{ language | default("FRANCAIS") }} (pas de melange de langues involontaire)
+2. ✅ Hook puissant en premiere ligne (question, chiffre, affirmation forte)
+3. ✅ Structure avec emojis comme puces visuelles
+4. ✅ Appel a l'action CLAIR en derniere ligne
+5. ✅ 3-7 hashtags pertinents
+6. ✅ Suggestion de photo/visuel pour accompagner
+
+## FORMAT DE REPONSE
+Retourne UNIQUEMENT ce JSON (rien avant, rien apres, pas de ```json) :
+{"content": "Le texte complet du post avec emojis et sauts de ligne", "hashtags": ["hashtag1", "hashtag2", "hashtag3"], "media_suggestion": "Description precise d'une photo ideale pour accompagner ce post"}

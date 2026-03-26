@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 170 20% 98%;
+    --foreground: 200 14% 4%;
+    --card: 0 0% 100%;
+    --card-foreground: 200 14% 4%;
+    --primary: 173 58% 39%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 180 8% 96%;
+    --secondary-foreground: 200 10% 10%;
+    --muted: 180 8% 96%;
+    --muted-foreground: 200 5% 45%;
+    --accent: 180 8% 96%;
+    --accent-foreground: 200 10% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 180 8% 92%;
+    --input: 180 8% 92%;
+    --ring: 173 58% 39%;
+    --radius: 0.875rem;
+    --sidebar-w: 16.5rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.3); }
+}
+
+@layer utilities {
+  .surface {
+    @apply bg-white rounded-2xl border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)];
+  }
+  .surface-hover {
+    @apply bg-white rounded-2xl border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)]
+           transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] hover:border-gray-200;
+  }
+  .surface-interactive {
+    @apply bg-white rounded-2xl border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)]
+           transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] hover:border-gray-200
+           cursor-pointer active:scale-[0.995];
+  }
+  .bg-page {
+    background:
+      radial-gradient(ellipse 80% 60% at 10% 0%, rgba(20,184,166,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 90% 100%, rgba(14,165,233,0.03) 0%, transparent 60%),
+      hsl(var(--background));
+  }
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none;
+  }
+  .input-base {
+    @apply w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm
+           placeholder:text-gray-400
+           focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/10
+           transition-colors;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-5 py-2.5
+           text-sm font-semibold text-white shadow-sm
+           hover:bg-brand-600 active:scale-[0.98]
+           disabled:opacity-50 disabled:pointer-events-none
+           transition-all duration-150;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-5 py-2.5
+           text-sm font-semibold text-gray-700 shadow-sm
+           hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98]
+           disabled:opacity-50 disabled:pointer-events-none
+           transition-all duration-150;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2
+           text-sm font-medium text-gray-500
+           hover:bg-gray-100 hover:text-gray-700
+           transition-colors;
+  }
+  .section-label {
+    @apply text-xs font-semibold uppercase tracking-wider text-gray-400;
+  }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}

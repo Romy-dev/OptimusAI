@@ -1,0 +1,16 @@
+Message du client: {{ customer_message }}
+
+Analyse ce message dans le contexte de la conversation. Retourne en JSON:
+{
+  "purchase_intent_score": 0.0 à 1.0 (probabilité d'intention d'achat),
+  "intent_signals": ["signal détecté 1", "signal 2"],
+  "recommended_products": [
+    {
+      "name": "nom du produit",
+      "reason": "pourquoi ce produit est pertinent",
+      "price": "prix si disponible"
+    }
+  ],
+  "sales_message": "message de recommandation naturel (vide si pas d'intention détectée)",
+  "action": "recommend" | "upsell" | "no_action"
+}

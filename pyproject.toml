@@ -1,0 +1,63 @@
+[project]
+name = "optimusai"
+version = "0.1.0"
+description = "AI-powered marketing and customer support platform for African businesses"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.14",
+    "asyncpg>=0.30",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.6",
+    "redis>=5.2",
+    "arq>=0.26",
+    "httpx>=0.28",
+    "python-jose[cryptography]>=3.3",
+    "passlib[bcrypt]>=1.7",
+    "python-multipart>=0.0.18",
+    "boto3>=1.35",
+    "pillow>=11.0",
+    "pgvector>=0.3",
+    "structlog>=24.4",
+    "prometheus-fastapi-instrumentator>=7.0",
+    "jinja2>=3.1",
+    "cryptography>=44.0",
+]
+
+[project.optional-dependencies]
+ai = [
+    "sentence-transformers>=3.3",
+    "langchain-core>=0.3",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "httpx>=0.28",
+    "factory-boy>=3.3",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]

@@ -1,0 +1,37 @@
+FROM python:3.12-slim
+
+WORKDIR /code
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip install --no-cache-dir pip --upgrade && \
+    pip install --no-cache-dir ".[dev]" || \
+    pip install --no-cache-dir \
+      "fastapi[standard]>=0.115" \
+      "sqlalchemy[asyncio]>=2.0" \
+      "alembic>=1.14" \
+      "asyncpg>=0.30" \
+      "pydantic>=2.10" \
+      "pydantic-settings>=2.6" \
+      "redis>=5.2" \
+      "arq>=0.26" \
+      "httpx>=0.28" \
+      "python-jose[cryptography]>=3.3" \
+      "passlib[bcrypt]>=1.7" \
+      "bcrypt<5" \
+      "python-multipart>=0.0.18" \
+      "boto3>=1.35" \
+      "pillow>=11.0" \
+      "pgvector>=0.3" \
+      "structlog>=24.4" \
+      "jinja2>=3.1" \
+      "cryptography>=44.0" \
+      "pymupdf>=1.25" \
+      "python-docx>=1.1"
+
+COPY app/ app/
+
+CMD ["python", "-m", "arq", "app.workers.settings.WorkerSettings"]

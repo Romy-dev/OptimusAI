@@ -1,0 +1,11 @@
+Analyse ce commentaire sur un réseau social et classifie-le.
+
+Commentaire: {{ comment_text }}
+
+Publication originale: {{ post_content }}
+
+Retourne UNIQUEMENT un JSON:
+{
+  "comment_type": "positive|negative|question|spam|neutral",
+  "reasoning": "brève explication"
+}
