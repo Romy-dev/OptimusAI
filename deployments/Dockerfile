@@ -34,7 +34,8 @@ RUN pip install --no-cache-dir pip --upgrade && \
       "pymupdf>=1.25" \
       "python-docx>=1.1" \
       "edge-tts>=7.0" \
-      "faster-whisper>=1.0"
+      "faster-whisper>=1.0" \
+      "google-genai>=1.0"
 
 # App code
 COPY app/ app/

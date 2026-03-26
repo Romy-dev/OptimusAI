@@ -87,6 +87,75 @@ class OllamaProvider(BaseLLMProvider):
             return False
 
 
+class GeminiProvider(BaseLLMProvider):
+    """Google Gemini via the google-genai SDK."""
+    name = "gemini"
+
+    def __init__(self, api_key: str | None = None):
+        self.api_key = api_key or settings.gemini_api_key
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from google import genai
+            self._client = genai.Client(api_key=self.api_key)
+        return self._client
+
+    async def generate(self, request: LLMRequest) -> LLMResponse:
+        import asyncio
+        start = time.perf_counter()
+        model = request.model or "gemini-2.5-flash"
+
+        # Build contents from messages
+        system_instruction = None
+        contents = []
+        for msg in request.messages:
+            if msg["role"] == "system":
+                system_instruction = msg["content"]
+            else:
+                role = "user" if msg["role"] == "user" else "model"
+                contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+        if not contents:
+            contents = [{"role": "user", "parts": [{"text": "Bonjour"}]}]
+
+        from google.genai import types
+        config = types.GenerateContentConfig(
+            temperature=request.temperature,
+            max_output_tokens=request.max_tokens,
+            system_instruction=system_instruction,
+        )
+
+        def _call():
+            client = self._get_client()
+            return client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+
+        response = await asyncio.to_thread(_call)
+        latency = int((time.perf_counter() - start) * 1000)
+
+        content = response.text or ""
+        tokens = getattr(response.usage_metadata, "total_token_count", 0) if response.usage_metadata else 0
+        finish = "stop"
+        if response.candidates and response.candidates[0].finish_reason:
+            finish = str(response.candidates[0].finish_reason)
+
+        return LLMResponse(
+            content=content,
+            model=model,
+            provider="gemini",
+            tokens_used=tokens,
+            latency_ms=latency,
+            finish_reason=finish,
+        )
+
+    async def health_check(self) -> bool:
+        return bool(self.api_key)
+
+
 class AnthropicProvider(BaseLLMProvider):
     name = "anthropic"
 
@@ -147,48 +216,50 @@ class AnthropicProvider(BaseLLMProvider):
 
 TASK_MODEL_CONFIG = {
     "copywriting": {
-        "primary": "ollama",
-        "model": "mistral:latest",
-        "fallback": "anthropic",
-        "fallback_model": "claude-haiku-4-5-20251001",
+        "primary": "gemini",
+        "model": "gemini-2.5-pro",
+        "fallback": "ollama",
+        "fallback_model": "mistral:latest",
         "temperature": 0.8,
         "max_tokens": 1500,
     },
     "support": {
-        "primary": "ollama",
-        "model": "mistral:latest",
-        "fallback": "anthropic",
-        "fallback_model": "claude-haiku-4-5-20251001",
+        "primary": "gemini",
+        "model": "gemini-2.5-flash",
+        "fallback": "ollama",
+        "fallback_model": "mistral:latest",
         "temperature": 0.3,
         "max_tokens": 500,
     },
     "reply": {
-        "primary": "ollama",
-        "model": "mistral:latest",
-        "fallback": "anthropic",
-        "fallback_model": "claude-haiku-4-5-20251001",
+        "primary": "gemini",
+        "model": "gemini-2.5-flash",
+        "fallback": "ollama",
+        "fallback_model": "mistral:latest",
         "temperature": 0.5,
         "max_tokens": 300,
     },
     "classification": {
-        "primary": "ollama",
-        "model": "mistral:latest",
+        "primary": "gemini",
+        "model": "gemini-2.5-flash",
+        "fallback": "ollama",
+        "fallback_model": "mistral:latest",
         "temperature": 0.0,
         "max_tokens": 50,
     },
     "moderation": {
-        "primary": "ollama",
-        "model": "mistral:latest",
-        "fallback": "anthropic",
-        "fallback_model": "claude-haiku-4-5-20251001",
+        "primary": "gemini",
+        "model": "gemini-2.5-flash",
+        "fallback": "ollama",
+        "fallback_model": "mistral:latest",
         "temperature": 0.0,
         "max_tokens": 200,
     },
     "summary": {
-        "primary": "ollama",
-        "model": "mistral:latest",
-        "fallback": "anthropic",
-        "fallback_model": "claude-haiku-4-5-20251001",
+        "primary": "gemini",
+        "model": "gemini-2.5-flash",
+        "fallback": "ollama",
+        "fallback_model": "mistral:latest",
         "temperature": 0.3,
         "max_tokens": 500,
     },
@@ -204,6 +275,8 @@ class LLMRouter:
 
     def _init_providers(self):
         self.providers["ollama"] = OllamaProvider()
+        if settings.gemini_api_key:
+            self.providers["gemini"] = GeminiProvider()
         if settings.anthropic_api_key:
             self.providers["anthropic"] = AnthropicProvider()
 

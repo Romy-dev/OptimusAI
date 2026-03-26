@@ -53,7 +53,8 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
-    default_llm_provider: str = "ollama"  # ollama, anthropic, openai
+    gemini_api_key: str = ""
+    default_llm_provider: str = "gemini"  # gemini, ollama, anthropic
 
     # Embeddings
     embedding_model: str = "BAAI/bge-m3"

@@ -69,6 +69,54 @@ class ClaudeVisionProvider:
             return VLMResponse(content=content, model="claude-sonnet-4-20250514", tokens_used=tokens)
 
 
+class GeminiVisionProvider:
+    """Google Gemini Vision — best quality VLM, native JSON output."""
+
+    def __init__(self):
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from google import genai
+            self._client = genai.Client(api_key=settings.gemini_api_key)
+        return self._client
+
+    async def analyze(self, image_data: bytes, prompt: str, system: str = "") -> VLMResponse:
+        import asyncio
+        from google.genai import types
+
+        # Detect media type
+        media_type = "image/png"
+        if image_data[:3] == b'\xff\xd8\xff':
+            media_type = "image/jpeg"
+
+        image_part = types.Part.from_bytes(data=image_data, mime_type=media_type)
+
+        full_prompt = prompt
+        if system:
+            full_prompt = f"{system}\n\n{prompt}"
+
+        config = types.GenerateContentConfig(
+            temperature=0.3,
+            max_output_tokens=4096,
+            response_mime_type="application/json",
+        )
+
+        def _call():
+            client = self._get_client()
+            return client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[full_prompt, image_part],
+                config=config,
+            )
+
+        response = await asyncio.to_thread(_call)
+        content = response.text or ""
+        tokens = getattr(response.usage_metadata, "total_token_count", 0) if response.usage_metadata else 0
+
+        return VLMResponse(content=content, model="gemini-2.5-flash", tokens_used=tokens)
+
+
 class OllamaVisionProvider:
     """Ollama LLaVA / llava-llama3 / bakllava for local vision."""
 
@@ -113,15 +161,21 @@ class VLMRouter:
         if self._provider:
             return self._provider
 
-        # Prefer Claude Vision if API key available
+        # Prefer Gemini Vision (best quality + native JSON)
+        if settings.gemini_api_key:
+            self._provider = GeminiVisionProvider()
+            logger.info("vlm_provider", provider="gemini_vision")
+            return self._provider
+
+        # Then Claude Vision
         if settings.anthropic_api_key:
             self._provider = ClaudeVisionProvider()
             logger.info("vlm_provider", provider="claude_vision")
             return self._provider
 
-        # Fallback to Ollama LLaVA
+        # Fallback to Ollama
         self._provider = OllamaVisionProvider()
-        logger.info("vlm_provider", provider="ollama_llava")
+        logger.info("vlm_provider", provider="ollama_vision")
         return self._provider
 
     async def analyze_image(
@@ -135,14 +189,18 @@ class VLMRouter:
         try:
             return await provider.analyze(image_data, prompt, system)
         except Exception as e:
-            logger.error("vlm_primary_failed", error=str(e))
-            # Try fallback if primary was Claude
-            if isinstance(provider, ClaudeVisionProvider):
+            logger.error("vlm_primary_failed", provider=type(provider).__name__, error=str(e))
+            # Try fallbacks in order
+            fallbacks = []
+            if not isinstance(provider, GeminiVisionProvider) and settings.gemini_api_key:
+                fallbacks.append(GeminiVisionProvider())
+            if not isinstance(provider, OllamaVisionProvider):
+                fallbacks.append(OllamaVisionProvider())
+            for fb in fallbacks:
                 try:
-                    fallback = OllamaVisionProvider()
-                    return await fallback.analyze(image_data, prompt, system)
+                    return await fb.analyze(image_data, prompt, system)
                 except Exception as e2:
-                    logger.error("vlm_fallback_failed", error=str(e2))
+                    logger.error("vlm_fallback_failed", provider=type(fb).__name__, error=str(e2))
             raise
 
 
