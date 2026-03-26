@@ -21,6 +21,7 @@ const ConnectionsPage = lazy(() => import("./pages/connections"));
 const TemplatesPage = lazy(() => import("./pages/templates"));
 const AnalyticsPage = lazy(() => import("./pages/analytics"));
 const LegalPage = lazy(() => import("./pages/legal"));
+const StoriesPage = lazy(() => import("./pages/stories"));
 const LandingPage = lazy(() => import("./pages/landing"));
 
 function PageSpinner() {
@@ -50,6 +51,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
             <Route path="/posts" element={<ProtectedRoute><PostsPage /></ProtectedRoute>} />
             <Route path="/gallery" element={<ProtectedRoute><GalleryPage /></ProtectedRoute>} />
+            <Route path="/stories" element={<ProtectedRoute><StoriesPage /></ProtectedRoute>} />
             <Route path="/inbox" element={<ProtectedRoute fullHeight><InboxPage /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
             <Route path="/approvals" element={<ProtectedRoute><ApprovalsPage /></ProtectedRoute>} />

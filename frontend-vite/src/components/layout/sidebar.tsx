@@ -6,7 +6,7 @@ import { approvals as approvalsApi, conversations as convoApi } from "@/lib/api"
 import {
   LayoutDashboard, Palette, FileText, MessageSquare, BookOpen,
   CheckCircle, Settings, LogOut, Zap, ChevronRight, ImageIcon,
-  Link2, Menu, X, Layers, BarChart3,
+  Link2, Menu, X, Layers, BarChart3, Film,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -14,6 +14,7 @@ const nav = [
   { label: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
   { label: "Contenus", href: "/posts", icon: FileText },
   { label: "Galerie IA", href: "/gallery", icon: ImageIcon },
+  { label: "Stories", href: "/stories", icon: Film },
   { label: "Inbox", href: "/inbox", icon: MessageSquare, badgeKey: "inbox" as const },
   { label: "Validations", href: "/approvals", icon: CheckCircle, badgeKey: "approvals" as const },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },

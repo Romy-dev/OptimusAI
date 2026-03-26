@@ -395,6 +395,15 @@ export const intelligence = {
   customers: () => request<any[]>("/intelligence/customers"),
 };
 
+export const stories = {
+  plan: (brief: string, brand_id: string, platform: string = "instagram") =>
+    request<any>('/stories/plan', { method: 'POST', body: { brief, brand_id, platform } }),
+  render: (story_plan: any, brand_id: string, slide_index?: number) =>
+    request<any>('/stories/render', { method: 'POST', body: { story_plan, brand_id, slide_index } }),
+  video: (story_plan: any) =>
+    request<any>('/stories/video', { method: 'POST', body: { story_plan } }),
+};
+
 export const coach = {
   suggestions: () => request<{ suggestions: any[]; health_score: number; summary: string }>("/coach/suggestions"),
 };
