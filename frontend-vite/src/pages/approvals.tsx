@@ -404,82 +404,82 @@ function ApprovalCard({
         )}
 
         {/* Action buttons for pending items */}
-        {item.status === "pending" && (
-        <div className="flex items-center gap-3">
-          {/* Approve button */}
-          <button
-            onClick={() => onApprove(item.id, note || undefined)}
-            disabled={acting}
+        {item.status === "pending" && (<>
+          <div className="flex items-center gap-3">
+            {/* Approve button */}
+            <button
+              onClick={() => onApprove(item.id, note || undefined)}
+              disabled={acting}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all",
+                "bg-emerald-600 text-white shadow-sm",
+                "hover:bg-emerald-700 hover:shadow-md active:scale-[0.98]",
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+              )}
+            >
+              {acting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4" />
+              )}
+              Approuver
+            </button>
+
+            {/* Reject button */}
+            <button
+              onClick={() => {
+                if (!note || note.length < 5) {
+                  toast.error("Note requise", {
+                    description: "La note de rejet doit faire au moins 5 caracteres.",
+                  });
+                  setNoteOpen(true);
+                  return;
+                }
+                onReject(item.id, note);
+              }}
+              disabled={acting}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-xl border-2 border-red-200 px-5 py-2.5 text-sm font-semibold transition-all",
+                "text-red-600 bg-white",
+                "hover:bg-red-50 hover:border-red-300 active:scale-[0.98]",
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+              )}
+            >
+              <XCircle className="h-4 w-4" />
+              Rejeter
+            </button>
+
+            {/* Note toggle */}
+            <button
+              onClick={() => setNoteOpen(!noteOpen)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                noteOpen || note
+                  ? "bg-gray-200 text-gray-800"
+                  : "text-gray-400 hover:text-gray-600 hover:bg-gray-100",
+              )}
+            >
+              <MessageSquare className="h-4 w-4" />
+              {note ? "Note ajoutee" : "Ajouter une note"}
+            </button>
+          </div>
+
+          {/* Expandable note input */}
+          <div
             className={cn(
-              "inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all",
-              "bg-emerald-600 text-white shadow-sm",
-              "hover:bg-emerald-700 hover:shadow-md active:scale-[0.98]",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
+              "overflow-hidden transition-all duration-300 ease-out",
+              noteOpen ? "max-h-32 opacity-100 mt-3" : "max-h-0 opacity-0",
             )}
           >
-            {acting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CheckCircle className="h-4 w-4" />
-            )}
-            Approuver
-          </button>
-
-          {/* Reject button */}
-          <button
-            onClick={() => {
-              if (!note || note.length < 5) {
-                toast.error("Note requise", {
-                  description: "La note de rejet doit faire au moins 5 caracteres.",
-                });
-                setNoteOpen(true);
-                return;
-              }
-              onReject(item.id, note);
-            }}
-            disabled={acting}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-xl border-2 border-red-200 px-5 py-2.5 text-sm font-semibold transition-all",
-              "text-red-600 bg-white",
-              "hover:bg-red-50 hover:border-red-300 active:scale-[0.98]",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-            )}
-          >
-            <XCircle className="h-4 w-4" />
-            Rejeter
-          </button>
-
-          {/* Note toggle */}
-          <button
-            onClick={() => setNoteOpen(!noteOpen)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
-              noteOpen || note
-                ? "bg-gray-200 text-gray-800"
-                : "text-gray-400 hover:text-gray-600 hover:bg-gray-100",
-            )}
-          >
-            <MessageSquare className="h-4 w-4" />
-            {note ? "Note ajoutee" : "Ajouter une note"}
-          </button>
-        </div>
-
-        {/* Expandable note input */}
-        <div
-          className={cn(
-            "overflow-hidden transition-all duration-300 ease-out",
-            noteOpen ? "max-h-32 opacity-100 mt-3" : "max-h-0 opacity-0",
-          )}
-        >
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Note de revue (obligatoire pour le rejet, min. 5 caracteres)..."
-            rows={2}
-            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-brand-300 focus:ring-2 focus:ring-brand-100 focus:outline-none resize-none transition-all"
-          />
-        </div>
-        )}
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Note de revue (obligatoire pour le rejet, min. 5 caracteres)..."
+              rows={2}
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-brand-300 focus:ring-2 focus:ring-brand-100 focus:outline-none resize-none transition-all"
+            />
+          </div>
+        </>)}
       </div>
     </div>
   );
