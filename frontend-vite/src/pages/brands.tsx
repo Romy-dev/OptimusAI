@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Save,
   Plus,
@@ -17,11 +17,12 @@ import {
   Building2,
   Megaphone,
   Hash,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
-import { brands as brandsApi } from "@/lib/api";
+import { brands as brandsApi, commerce as commerceApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { TagInput } from "@/components/ui/tag-input";
 import { Skeleton, FormSkeleton } from "@/components/ui/skeleton";
@@ -293,6 +294,10 @@ export default function BrandsPage() {
     accent: "#0EA5E9",
   });
 
+  // Logo
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
   // Products
   const [products, setProducts] = useState<Product[]>([]);
   const [newProduct, setNewProduct] = useState({ name: "", price: "" });
@@ -314,6 +319,24 @@ export default function BrandsPage() {
 
   // ── Load brand data ──
 
+  const loadBrandProfile = useCallback(async (id: string) => {
+    try {
+      const profile = await brandsApi.getProfile(id);
+      if (profile) {
+        setProducts((profile.products || []).map((p: any) => ({ name: p.name, price: p.price || "", description: p.description })));
+        setGreetingStyle(profile.greeting_style || "");
+        setClosingStyle(profile.closing_style || "");
+        setBannedWords(profile.banned_words || []);
+        setBannedTopics(profile.banned_topics || []);
+        setExamplePosts(profile.example_posts || []);
+        setChannelTones(profile.tone_by_channel || {});
+      }
+    } catch {
+      // Profile may not exist yet — fall back to guidelines
+      console.log("No brand profile found, using guidelines fallback");
+    }
+  }, []);
+
   useEffect(() => {
     if (brandList && brandList.length > 0 && !brandId) {
       const b = brandList[0];
@@ -322,21 +345,30 @@ export default function BrandsPage() {
       setDescription(b.description || "");
       setIndustry(b.industry || "");
       setTone(b.tone || "professional");
+      setLogoUrl(b.logo_url || null);
       setColors(
         b.colors && Object.keys(b.colors).length > 0
           ? (b.colors as typeof colors)
           : { primary: "#14B8A6", secondary: "#1F2937", accent: "#0EA5E9" },
       );
-      const g = b.guidelines || {};
-      setProducts(g.products || []);
-      setGreetingStyle(g.greeting_style || "");
-      setClosingStyle(g.closing_style || "");
-      setBannedWords(g.banned_words || []);
-      setBannedTopics(g.banned_topics || []);
-      setExamplePosts(g.example_posts || []);
-      setChannelTones(g.channel_tones || {});
+
+      // Load profile data from dedicated endpoint
+      loadBrandProfile(b.id).then(() => {
+        // If profile load failed, the catch block already logged it.
+        // Fall back to guidelines only if state is still empty after profile load attempt.
+      }).catch(() => {
+        // Fallback: use guidelines from brand object
+        const g = b.guidelines || {};
+        setProducts((prev) => prev.length > 0 ? prev : (g.products || []));
+        setGreetingStyle((prev) => prev || g.greeting_style || "");
+        setClosingStyle((prev) => prev || g.closing_style || "");
+        setBannedWords((prev) => prev.length > 0 ? prev : (g.banned_words || []));
+        setBannedTopics((prev) => prev.length > 0 ? prev : (g.banned_topics || []));
+        setExamplePosts((prev) => prev.length > 0 ? prev : (g.example_posts || []));
+        setChannelTones((prev) => Object.keys(prev).length > 0 ? prev : (g.channel_tones || {}));
+      });
     }
-  }, [brandList]);
+  }, [brandList, loadBrandProfile]);
 
   // ── Handlers ──
 
@@ -344,22 +376,68 @@ export default function BrandsPage() {
     if (!brandId) return;
     setSaving(true);
     try {
+      // 1. Save brand basic info
       await brandsApi.update(brandId, {
         name,
         description,
         industry,
         tone,
         colors,
-        guidelines: {
-          products,
-          greeting_style: greetingStyle,
-          closing_style: closingStyle,
-          banned_words: bannedWords,
-          banned_topics: bannedTopics,
-          example_posts: examplePosts,
-          channel_tones: channelTones,
-        },
+        logo_url: logoUrl || undefined,
       } as any);
+
+      // 2. Save profile data (greeting, closing, banned words, products, examples, channel tones)
+      await brandsApi.updateProfile(brandId, {
+        greeting_style: greetingStyle,
+        closing_style: closingStyle,
+        banned_words: bannedWords,
+        banned_topics: bannedTopics,
+        products: products.map((p) => ({
+          name: p.name,
+          price: p.price || undefined,
+          description: p.description || undefined,
+        })),
+        example_posts: examplePosts.map((ex) => ({
+          channel: ex.channel,
+          content: ex.content,
+          approved: true,
+        })),
+        tone_by_channel: channelTones,
+        default_tone: tone,
+      });
+
+      // 3. Sync products to commerce API (best-effort, don't block save on failure)
+      try {
+        // Get existing commerce products for this brand
+        const existingProducts = await commerceApi.listProducts(brandId);
+        const existingNames = new Set(existingProducts.map((p) => p.name.toLowerCase()));
+        const currentNames = new Set(products.map((p) => p.name.toLowerCase()));
+
+        // Create new products that don't exist yet
+        for (const p of products) {
+          if (!existingNames.has(p.name.toLowerCase())) {
+            const priceNum = parseFloat(p.price.replace(/[^\d.]/g, ""));
+            await commerceApi.createProduct({
+              brand_id: brandId,
+              name: p.name,
+              description: p.description || undefined,
+              price: isNaN(priceNum) || priceNum <= 0 ? 1 : priceNum,
+              currency: "XOF",
+            });
+          }
+        }
+
+        // Delete products that were removed from the inline editor
+        for (const existing of existingProducts) {
+          if (!currentNames.has(existing.name.toLowerCase())) {
+            await commerceApi.deleteProduct(existing.id);
+          }
+        }
+      } catch (commerceErr) {
+        // Commerce sync is best-effort
+        console.warn("Commerce product sync failed:", commerceErr);
+      }
+
       toast.success("Marque enregistree", {
         description: "Les modifications ont ete sauvegardees avec succes.",
       });
@@ -394,6 +472,45 @@ export default function BrandsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowed = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      toast.error("Format non supporte", {
+        description: "Utilisez PNG, JPG, SVG ou WebP.",
+      });
+      return;
+    }
+
+    // Validate file size (2 MB max)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Fichier trop volumineux", {
+        description: "La taille maximale est de 2 Mo.",
+      });
+      return;
+    }
+
+    // Convert to base64 data URL
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setLogoUrl(dataUrl);
+      toast.success("Logo charge", {
+        description: "N'oubliez pas d'enregistrer pour sauvegarder.",
+      });
+    };
+    reader.onerror = () => {
+      toast.error("Erreur de lecture du fichier");
+    };
+    reader.readAsDataURL(file);
+
+    // Reset input so the same file can be selected again
+    e.target.value = "";
   };
 
   const addProduct = () => {
@@ -577,20 +694,57 @@ export default function BrandsPage() {
             </div>
           </Section>
 
-          {/* Logo upload placeholder */}
+          {/* Logo upload */}
           <Section icon={ImagePlus} title="Logo de la marque" subtitle="Utilisee dans les publications et le support">
-            <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50/50 p-8 transition-colors hover:border-brand-300 hover:bg-brand-50/30 cursor-pointer">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm border border-gray-100">
-                <Upload className="h-7 w-7 text-gray-300" />
+            {/* Hidden file input */}
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+              onChange={handleLogoSelect}
+              className="hidden"
+            />
+
+            {logoUrl ? (
+              /* Logo preview */
+              <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-brand-200 bg-brand-50/30 p-6 relative group">
+                <button
+                  onClick={() => setLogoUrl(null)}
+                  className="absolute top-3 right-3 flex h-7 w-7 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:border-red-200 transition-all shadow-sm"
+                  title="Supprimer le logo"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+                <img
+                  src={logoUrl}
+                  alt="Logo de la marque"
+                  className="h-28 w-28 object-contain rounded-xl"
+                />
+                <button
+                  onClick={() => logoInputRef.current?.click()}
+                  className="mt-4 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
+                >
+                  Changer le logo
+                </button>
               </div>
-              <p className="mt-4 text-sm font-medium text-gray-600">
-                Deposez votre logo ici
-              </p>
-              <p className="mt-1 text-xs text-gray-400">PNG, SVG ou JPG (max 2 Mo)</p>
-              <button className="mt-4 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors">
-                Parcourir les fichiers
-              </button>
-            </div>
+            ) : (
+              /* Upload drop zone */
+              <div
+                onClick={() => logoInputRef.current?.click()}
+                className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50/50 p-8 transition-colors hover:border-brand-300 hover:bg-brand-50/30 cursor-pointer"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm border border-gray-100">
+                  <Upload className="h-7 w-7 text-gray-300" />
+                </div>
+                <p className="mt-4 text-sm font-medium text-gray-600">
+                  Deposez votre logo ici
+                </p>
+                <p className="mt-1 text-xs text-gray-400">PNG, SVG ou JPG (max 2 Mo)</p>
+                <span className="mt-4 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors">
+                  Parcourir les fichiers
+                </span>
+              </div>
+            )}
           </Section>
 
           {/* Colors */}

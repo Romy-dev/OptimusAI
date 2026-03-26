@@ -205,11 +205,100 @@ export const auth = {
   me: () => request<User>("/auth/me"),
 };
 
+export interface BrandProfile {
+  id: string;
+  brand_id: string;
+  default_tone: string;
+  tone_by_channel: Record<string, string>;
+  tone_description: string | null;
+  primary_language: string;
+  products: { name: string; description?: string; price?: string; category?: string }[];
+  services: { name: string; description?: string; zones?: string[] }[];
+  response_rules: { trigger: string; rule: string }[];
+  banned_words: string[];
+  banned_topics: string[];
+  sensitive_topics: string[];
+  example_posts: { channel: string; content: string; approved?: boolean }[];
+  channel_profiles: Record<string, any>;
+  business_hours: Record<string, any>;
+  contact_info: Record<string, any>;
+  greeting_style?: string;
+  closing_style?: string;
+}
+
+export interface BrandProfileUpdate {
+  default_tone?: string;
+  tone_by_channel?: Record<string, string>;
+  products?: { name: string; description?: string; price?: string; category?: string }[];
+  greeting_style?: string;
+  closing_style?: string;
+  banned_words?: string[];
+  banned_topics?: string[];
+  example_posts?: { channel: string; content: string; approved?: boolean }[];
+  channel_profiles?: Record<string, any>;
+}
+
+export interface CommerceProduct {
+  id: string;
+  brand_id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  currency: string;
+  category: string | null;
+  image_url: string | null;
+  in_stock: boolean;
+  sku: string | null;
+}
+
 export const brands = {
   list: () => request<Brand[]>("/brands"),
   create: (data: Partial<Brand>) => request<Brand>("/brands", { method: "POST", body: data }),
   get: (id: string) => request<Brand>(`/brands/${id}`),
   update: (id: string, data: Partial<Brand>) => request<Brand>(`/brands/${id}`, { method: "PUT", body: data }),
+  getProfile: (id: string) => request<BrandProfile>(`/brands/${id}/profile`),
+  updateProfile: (id: string, data: BrandProfileUpdate) => request<BrandProfile>(`/brands/${id}/profile`, { method: "PUT", body: data }),
+  getContext: (id: string) => request<any>(`/brands/${id}/context`),
+};
+
+export interface CommerceOrder {
+  id: string;
+  customer_name: string;
+  customer_phone: string;
+  items: { product_id: string; product_name: string; quantity: number; unit_price: number }[];
+  total: number;
+  currency: string;
+  status: string;
+  created_at: string;
+}
+
+export interface CommerceStats {
+  total_revenue: number;
+  orders_count: number;
+  average_order_value: number;
+  currency: string;
+  top_products: { name: string; revenue: number; quantity: number }[];
+}
+
+export const commerce = {
+  listProducts: (brandId?: string, search?: string, category?: string) => {
+    const params = new URLSearchParams();
+    if (brandId) params.set("brand_id", brandId);
+    if (search) params.set("search", search);
+    if (category) params.set("category", category);
+    const qs = params.toString();
+    return request<CommerceProduct[]>(`/commerce/products${qs ? `?${qs}` : ""}`);
+  },
+  createProduct: (data: { brand_id?: string; name: string; description?: string; price: number; currency?: string; category?: string; image_url?: string; in_stock?: boolean; sku?: string }) =>
+    request<CommerceProduct>("/commerce/products", { method: "POST", body: data }),
+  updateProduct: (id: string, data: Partial<{ name: string; description: string; price: number; category: string; image_url: string; in_stock: boolean; sku: string }>) =>
+    request<CommerceProduct>(`/commerce/products/${id}`, { method: "PUT", body: data }),
+  deleteProduct: (id: string) => request<void>(`/commerce/products/${id}`, { method: "DELETE" }),
+  orders: (status?: string) =>
+    request<CommerceOrder[]>(`/commerce/orders${status ? `?status=${status}` : ""}`),
+  updateOrderStatus: (id: string, status: string) =>
+    request<CommerceOrder>(`/commerce/orders/${id}/status`, { method: "PUT", body: { status } }),
+  stats: () => request<CommerceStats>("/commerce/stats"),
 };
 
 export const posts = {
