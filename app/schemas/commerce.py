@@ -55,6 +55,16 @@ class ProductResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# === Promote schema ===
+
+
+class PromoteRequest(BaseModel):
+    channels: list[str] = Field(default=["facebook"])
+    generate_story: bool = True
+    generate_poster: bool = True
+    language: str = "fr"
+
+
 # === Order schemas ===
 
 

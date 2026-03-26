@@ -9,6 +9,7 @@ from app.core.exceptions import NotFoundError
 from app.core.permissions import RequirePermission
 from app.models.user import User
 from app.schemas.post import (
+    AttachImageRequest,
     PostCreate,
     PostGenerateRequest,
     PostResponse,
@@ -217,7 +218,7 @@ async def generate_poster_endpoint(
 @router.post("/{post_id}/attach-image")
 async def attach_image_to_post(
     post_id: uuid.UUID,
-    body: dict,
+    body: AttachImageRequest,
     user: User = Depends(RequirePermission("posts.create")),
     service: ContentService = Depends(get_content_service),
     session: AsyncSession = Depends(get_session),
@@ -229,21 +230,15 @@ async def attach_image_to_post(
     if not post:
         raise NotFoundError("Post not found")
 
-    image_url = body.get("image_url", "")
-    s3_key = body.get("s3_key", "")
-    if not image_url:
-        from app.core.exceptions import InvalidInputError
-        raise InvalidInputError("image_url is required")
-
     asset = PostAsset(
         tenant_id=user.tenant_id,
         post_id=post_id,
         asset_type="image",
-        file_url=image_url,
+        file_url=body.image_url,
         mime_type="image/png",
         ai_generated=True,
-        generation_prompt=body.get("prompt", ""),
-        metadata_=body.get("metadata", {}),
+        generation_prompt=body.prompt or "",
+        metadata_=body.metadata,
     )
     session.add(asset)
     await session.commit()

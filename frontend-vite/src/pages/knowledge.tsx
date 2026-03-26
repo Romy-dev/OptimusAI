@@ -4,7 +4,7 @@ import {
   Upload, Search, CheckCircle, Clock, XCircle, Loader2, Trash2,
   RefreshCw, Plus, X, Sparkles, FileText, HelpCircle, ShoppingBag,
   BookOpen, Shield, FileQuestion, ChevronDown, Layers, ClipboardPaste,
-  Database, Lightbulb, BarChart3, ArrowRight,
+  Database, Lightbulb, BarChart3, ArrowRight, Globe, Link,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -202,6 +202,12 @@ export default function KnowledgePage() {
   // Drag-and-drop state
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // URL import state
+  const [showUrlImport, setShowUrlImport] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [urlTitle, setUrlTitle] = useState("");
+  const [importingUrl, setImportingUrl] = useState(false);
+
   const brandId = brandList?.[0]?.id;
   const documents = docs ?? [];
   const activeDocType = docTypeConfigs[newDoc.doc_type] || docTypeConfigs.custom;
@@ -309,6 +315,26 @@ export default function KnowledgePage() {
     }
   }, []);
 
+  const handleUrlImport = useCallback(async () => {
+    if (!brandId || !urlInput.trim()) {
+      toast.warning("URL requise", { description: "Entrez une URL valide a analyser." });
+      return;
+    }
+    setImportingUrl(true);
+    try {
+      await knowledgeApi.createFromUrl(brandId, urlInput.trim(), urlTitle.trim() || undefined);
+      toast.success("Page importee", { description: "Le contenu est en cours d'indexation." });
+      setShowUrlImport(false);
+      setUrlInput("");
+      setUrlTitle("");
+      refetch();
+    } catch (err: any) {
+      toast.error("Erreur d'import", { description: err.message });
+    } finally {
+      setImportingUrl(false);
+    }
+  }, [brandId, urlInput, urlTitle, refetch]);
+
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     // Allow default paste behavior in the textarea but show feedback
     const text = e.clipboardData.getData("text/plain");
@@ -338,17 +364,91 @@ export default function KnowledgePage() {
             </div>
           </div>
         </div>
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          className={cn(
-            "btn-primary",
-            showAdd && "bg-gray-100 text-gray-600 hover:bg-gray-200 shadow-none"
-          )}
-        >
-          {showAdd ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {showAdd ? "Fermer" : "Ajouter un document"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowUrlImport(!showUrlImport); if (showAdd) setShowAdd(false); }}
+            className={cn(
+              "btn-secondary",
+              showUrlImport && "ring-2 ring-brand-500/20"
+            )}
+          >
+            <Globe className="h-4 w-4" />
+            Lien URL
+          </button>
+          <button
+            onClick={() => { setShowAdd(!showAdd); if (showUrlImport) setShowUrlImport(false); }}
+            className={cn(
+              "btn-primary",
+              showAdd && "bg-gray-100 text-gray-600 hover:bg-gray-200 shadow-none"
+            )}
+          >
+            {showAdd ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {showAdd ? "Fermer" : "Ajouter un document"}
+          </button>
+        </div>
       </div>
+
+      {/* ═══ URL import panel ═══ */}
+      {showUrlImport && (
+        <div className="surface rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
+          <div className="bg-gradient-to-r from-sky-50 to-brand-50 px-6 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100">
+                <Globe className="h-4.5 w-4.5 text-sky-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Ajouter depuis un lien</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Importez le contenu d'une page web pour enrichir votre base de connaissances</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div>
+              <label className="section-label mb-1.5 block">URL de la page</label>
+              <div className="relative">
+                <Link className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="url"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  className="input-base pl-10"
+                  placeholder="https://exemple.com/ma-page"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="section-label mb-1.5 block">
+                Titre <span className="text-gray-400 font-normal">(optionnel, auto-detecte si vide)</span>
+              </label>
+              <input
+                value={urlTitle}
+                onChange={(e) => setUrlTitle(e.target.value)}
+                className="input-base"
+                placeholder="Titre du document..."
+              />
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                onClick={handleUrlImport}
+                disabled={importingUrl || !urlInput.trim()}
+                className="btn-primary"
+              >
+                {importingUrl ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Analyse en cours...</>
+                ) : (
+                  <><Globe className="h-4 w-4" /> Analyser et ajouter</>
+                )}
+              </button>
+              <button onClick={() => setShowUrlImport(false)} className="btn-ghost">
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ Add document panel ═══ */}
       {showAdd && (

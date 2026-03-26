@@ -9,10 +9,17 @@ class DocumentCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     doc_type: str = Field(
         ...,
-        pattern="^(faq|product_catalog|policy|guide|webpage|custom)$",
+        pattern="^(faq|product_catalog|policy|guide|webpage|custom|url|product_faq)$",
     )
     raw_content: str | None = None
     source_url: str | None = None
+    language: str = "fr"
+
+
+class URLDocumentRequest(BaseModel):
+    url: str = Field(min_length=5, max_length=2000)
+    brand_id: uuid.UUID
+    title: str | None = Field(default=None, max_length=500)
     language: str = "fr"
 
 

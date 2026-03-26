@@ -294,6 +294,8 @@ export const commerce = {
   updateProduct: (id: string, data: Partial<{ name: string; description: string; price: number; category: string; image_url: string; in_stock: boolean; sku: string }>) =>
     request<CommerceProduct>(`/commerce/products/${id}`, { method: "PUT", body: data }),
   deleteProduct: (id: string) => request<void>(`/commerce/products/${id}`, { method: "DELETE" }),
+  promoteProduct: (id: string, data: { channels?: string[]; generate_poster?: boolean; generate_story?: boolean }) =>
+    request<any>(`/commerce/products/${id}/promote`, { method: 'POST', body: data }),
   orders: (status?: string) =>
     request<CommerceOrder[]>(`/commerce/orders${status ? `?status=${status}` : ""}`),
   updateOrderStatus: (id: string, status: string) =>
@@ -347,6 +349,8 @@ export const knowledge = {
     request<KnowledgeDoc>("/knowledge/documents", { method: "POST", body: data }),
   get: (id: string) => request<KnowledgeDoc>(`/knowledge/documents/${id}`),
   delete: (id: string) => request<void>(`/knowledge/documents/${id}`, { method: "DELETE" }),
+  createFromUrl: (brand_id: string, url: string, title?: string) =>
+    request<any>('/knowledge/documents/from-url', { method: 'POST', body: { brand_id, url, title } }),
   reindex: (id: string) => request<KnowledgeDoc>(`/knowledge/documents/${id}/reindex`, { method: "POST" }),
   search: (data: { query: string; brand_id: string; min_score?: number }) =>
     request<{ results: { chunk_id: string; document_id: string; document_title: string; content: string; section_title?: string; score: number }[]; total: number }>("/knowledge/search", { method: "POST", body: data }),

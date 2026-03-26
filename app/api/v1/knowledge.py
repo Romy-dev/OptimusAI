@@ -15,6 +15,7 @@ from app.schemas.knowledge import (
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
     SearchResultItem,
+    URLDocumentRequest,
 )
 from app.services.knowledge_service import KnowledgeService
 from app.services.quota_service import QuotaService
@@ -56,6 +57,47 @@ async def create_document(
         raw_content=body.raw_content,
         source_url=body.source_url,
         language=body.language,
+    )
+
+    await quota.record_usage(user.tenant_id, "documents")
+    await enqueue("ingest_document", str(doc.id), str(user.tenant_id))
+
+    return doc
+
+
+@router.post("/documents/from-url", response_model=DocumentResponse, status_code=201)
+async def create_from_url(
+    body: URLDocumentRequest,
+    user: User = Depends(RequirePermission("knowledge.write")),
+    service: KnowledgeService = Depends(get_knowledge_service),
+    session: AsyncSession = Depends(get_session),
+):
+    """Scrape a URL and add the content as a knowledge document."""
+    from app.core.exceptions import InvalidInputError
+    from app.services.url_scraper import scrape_url
+
+    quota = QuotaService(session)
+    await quota.enforce_quota(user.tenant_id, "documents")
+
+    try:
+        scraped = await scrape_url(body.url)
+    except ValueError as e:
+        raise InvalidInputError(str(e))
+
+    title = body.title or scraped["title"] or body.url
+
+    doc = await service.create_document(
+        brand_id=body.brand_id,
+        title=title,
+        doc_type="url",
+        uploaded_by=user.id,
+        raw_content=scraped["content"],
+        source_url=body.url,
+        language=body.language,
+        metadata={
+            "scraped_title": scraped["title"],
+            "scraped_description": scraped["description"],
+        },
     )
 
     await quota.record_usage(user.tenant_id, "documents")

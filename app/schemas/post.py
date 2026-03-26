@@ -25,6 +25,13 @@ class PostGenerateRequest(BaseModel):
     language: str = "fr"
 
 
+class AttachImageRequest(BaseModel):
+    image_url: str = Field(min_length=1, max_length=2000)
+    s3_key: str | None = Field(default=None, max_length=500)
+    prompt: str | None = Field(default=None, max_length=2000)
+    metadata: dict = Field(default_factory=dict)
+
+
 class PostUpdate(BaseModel):
     content_text: str | None = Field(default=None, max_length=5000)
     hashtags: list[str] | None = None

@@ -1,11 +1,12 @@
 
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Plus, Zap, FileText, Clock, CheckCircle, XCircle, Globe, Eye,
   Loader2, Sparkles, Bot, X, Send, Trash2, ArrowUpRight, MoreHorizontal,
   Filter, Calendar, ImageIcon, Save, Copy, RefreshCw, Pencil, Check,
   Hash, Facebook, Instagram, MessageCircle, CalendarClock, AlertCircle,
-  Megaphone, ShoppingBag, Star, Gift,
+  Megaphone, ShoppingBag, Star, Gift, Layout, PlayCircle, ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -227,6 +228,7 @@ function SchedulePicker({
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export default function PostsPage() {
+  const navigate = useNavigate();
   const { data: postList, loading, refetch } = useApi(() => postsApi.list(), []);
   const { data: brandList } = useApi(() => brandsApi.list(), []);
 
@@ -807,6 +809,53 @@ export default function PostsPage() {
                     >
                       <CheckCircle className="h-3.5 w-3.5" /> Accepter
                     </button>
+                  </div>
+
+                  {/* Actions suivantes */}
+                  <div className="rounded-xl border border-gray-200 bg-gray-50/50 p-4 space-y-2">
+                    <p className="text-xs font-semibold text-gray-600 mb-3">Actions suivantes</p>
+                    <button
+                      onClick={() => navigate("/gallery", { state: { brief: `Affiche marketing pour: ${generatedPost.content_text?.slice(0, 100)}` } })}
+                      className="w-full flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:border-brand-200 hover:bg-brand-50/30 transition-all group"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500 group-hover:bg-brand-100 transition-colors">
+                        <Layout className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-700">Generer une affiche pour ce post</p>
+                        <p className="text-[10px] text-gray-400">Studio creatif IA</p>
+                      </div>
+                      <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-brand-500 transition-colors" />
+                    </button>
+                    <button
+                      onClick={() => navigate("/stories", { state: { brief: generatedPost.content_text?.slice(0, 150), brand_id: selectedBrandId } })}
+                      className="w-full flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:border-purple-200 hover:bg-purple-50/30 transition-all group"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-500 group-hover:bg-purple-100 transition-colors">
+                        <PlayCircle className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-700">Creer une Story avec ce post</p>
+                        <p className="text-[10px] text-gray-400">Stories Instagram / Facebook</p>
+                      </div>
+                      <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-purple-500 transition-colors" />
+                    </button>
+                    {generatedPost.status === "approved" && (
+                      <button
+                        onClick={() => handleAction(generatedPost.id, "publish")}
+                        disabled={actionId === generatedPost.id}
+                        className="w-full flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:border-emerald-200 hover:bg-emerald-50/30 transition-all group"
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-500 group-hover:bg-emerald-100 transition-colors">
+                          <Send className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-gray-700">Publier maintenant</p>
+                          <p className="text-[10px] text-gray-400">Publication immediate</p>
+                        </div>
+                        <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-emerald-500 transition-colors" />
+                      </button>
+                    )}
                   </div>
                 </>
               )}

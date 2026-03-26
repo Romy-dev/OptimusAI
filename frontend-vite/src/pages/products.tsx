@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import {
   Package, Search, Plus, Edit3, Trash2, ShoppingCart, BarChart3,
   Tag, Check, X, DollarSign, TrendingUp, Loader2, Upload, ImageIcon,
+  Megaphone, Facebook, Instagram, MessageCircle, CheckCircle, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -30,7 +31,8 @@ type Tab = "products" | "orders" | "stats";
 
 // ── Helpers ──
 
-function formatFCFA(amount: number): string {
+function formatFCFA(amount: number | undefined | null): string {
+  if (amount == null || isNaN(amount)) return "0 FCFA";
   return amount.toLocaleString("fr-FR").replace(/,/g, " ") + " FCFA";
 }
 
@@ -383,6 +385,202 @@ function StatsTab() {
 }
 
 // ══════════════════════════════════════════════════════════
+// ═══ PROMOTE MODAL ═══
+// ══════════════════════════════════════════════════════════
+
+const PROMOTE_CHANNELS = [
+  { key: "facebook", label: "Facebook", icon: Facebook, color: "bg-blue-50 text-blue-600 border-blue-200", activeColor: "bg-blue-600 text-white border-blue-600" },
+  { key: "instagram", label: "Instagram", icon: Instagram, color: "bg-pink-50 text-pink-600 border-pink-200", activeColor: "bg-pink-600 text-white border-pink-600" },
+  { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, color: "bg-emerald-50 text-emerald-600 border-emerald-200", activeColor: "bg-emerald-600 text-white border-emerald-600" },
+];
+
+function PromoteModal({
+  product,
+  onClose,
+}: {
+  product: CommerceProduct;
+  onClose: () => void;
+}) {
+  const [channels, setChannels] = useState<string[]>(["facebook"]);
+  const [generatePost, setGeneratePost] = useState(true);
+  const [generatePoster, setGeneratePoster] = useState(true);
+  const [generateStory, setGenerateStory] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+  const [results, setResults] = useState<any>(null);
+
+  const toggleChannel = (ch: string) => {
+    setChannels((prev) =>
+      prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]
+    );
+  };
+
+  const handlePromote = async () => {
+    if (channels.length === 0) {
+      toast.warning("Selectionnez au moins un canal");
+      return;
+    }
+    setPromoting(true);
+    try {
+      const res = await commerceApi.promoteProduct(product.id, {
+        channels,
+        generate_poster: generatePoster,
+        generate_story: generateStory,
+      });
+      setResults(res);
+      toast.success("Promotion lancee avec succes !");
+    } catch (err: any) {
+      toast.error("Erreur lors de la promotion", { description: err.message });
+    } finally {
+      setPromoting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md mx-4 bg-white rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-purple-500">
+              <Megaphone className="h-5 w-5 text-white" />
+            </div>
+            <h2 className="text-lg font-semibold text-gray-900">Promouvoir ce produit</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Product preview */}
+          <div className="flex items-center gap-4 rounded-xl bg-gray-50 border border-gray-100 p-4">
+            <div className="h-16 w-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+              {product.image_url ? (
+                <img src={product.image_url} alt={product.name} className="h-full w-full object-cover" />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center">
+                  <Package className="h-6 w-6 text-gray-300" />
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900 truncate">{product.name}</p>
+              <p className="text-lg font-bold text-brand-600">{formatFCFA(product.price)}</p>
+            </div>
+          </div>
+
+          {!results ? (
+            <>
+              {/* Content options */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">Contenu a generer</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 rounded-xl border border-gray-200 p-3 cursor-pointer hover:bg-gray-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={generatePost}
+                      onChange={(e) => setGeneratePost(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    <span className="text-sm text-gray-700">Creer un post Facebook</span>
+                  </label>
+                  <label className="flex items-center gap-3 rounded-xl border border-gray-200 p-3 cursor-pointer hover:bg-gray-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={generatePoster}
+                      onChange={(e) => setGeneratePoster(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    <span className="text-sm text-gray-700">Generer une affiche</span>
+                  </label>
+                  <label className="flex items-center gap-3 rounded-xl border border-gray-200 p-3 cursor-pointer hover:bg-gray-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={generateStory}
+                      onChange={(e) => setGenerateStory(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    <span className="text-sm text-gray-700">Creer une Story</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Channel selector */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">Canaux de diffusion</label>
+                <div className="flex gap-2">
+                  {PROMOTE_CHANNELS.map((ch) => {
+                    const active = channels.includes(ch.key);
+                    return (
+                      <button
+                        key={ch.key}
+                        onClick={() => toggleChannel(ch.key)}
+                        className={cn(
+                          "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium border transition-all",
+                          active ? ch.activeColor : ch.color,
+                        )}
+                      >
+                        <ch.icon className="h-4 w-4" />
+                        {ch.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Launch button */}
+              <button
+                onClick={handlePromote}
+                disabled={promoting || channels.length === 0}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-teal-500 to-purple-500 hover:from-teal-600 hover:to-purple-600 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-sm"
+              >
+                {promoting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Promotion en cours...</>
+                ) : (
+                  <><Megaphone className="h-4 w-4" /> Lancer la promotion</>
+                )}
+              </button>
+            </>
+          ) : (
+            /* Results */
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                <CheckCircle className="h-5 w-5 text-emerald-600" />
+                <p className="text-sm font-medium text-emerald-700">Promotion lancee avec succes !</p>
+              </div>
+
+              {results.post_id && (
+                <a href={`/posts`} className="flex items-center justify-between rounded-xl border border-gray-200 p-3 hover:bg-gray-50 transition-colors">
+                  <span className="text-sm text-gray-700">Post cree</span>
+                  <ExternalLink className="h-4 w-4 text-gray-400" />
+                </a>
+              )}
+              {results.poster_url && (
+                <a href={`/gallery`} className="flex items-center justify-between rounded-xl border border-gray-200 p-3 hover:bg-gray-50 transition-colors">
+                  <span className="text-sm text-gray-700">Affiche generee</span>
+                  <ExternalLink className="h-4 w-4 text-gray-400" />
+                </a>
+              )}
+              {results.story_id && (
+                <a href={`/stories`} className="flex items-center justify-between rounded-xl border border-gray-200 p-3 hover:bg-gray-50 transition-colors">
+                  <span className="text-sm text-gray-700">Story creee</span>
+                  <ExternalLink className="h-4 w-4 text-gray-400" />
+                </a>
+              )}
+
+              <button onClick={onClose} className="btn-primary w-full">
+                Fermer
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
 // ═══ ORDERS TAB ═══
 // ══════════════════════════════════════════════════════════
 
@@ -514,6 +712,9 @@ export default function ProductsPage() {
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<CommerceProduct | null>(null);
+
+  // Promote modal
+  const [promoteTarget, setPromoteTarget] = useState<CommerceProduct | null>(null);
 
   // Filtered products
   const filtered = useMemo(() => {
@@ -781,6 +982,14 @@ export default function ProductsPage() {
                       {/* Action buttons */}
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
+                          onClick={(e) => { e.stopPropagation(); setPromoteTarget(product); }}
+                          className="rounded-lg px-2 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-teal-500 to-purple-500 hover:from-teal-600 hover:to-purple-600 transition-all flex items-center gap-1 shadow-sm"
+                          title="Promouvoir"
+                        >
+                          <Megaphone className="h-3.5 w-3.5" />
+                          Promouvoir
+                        </button>
+                        <button
                           onClick={(e) => { e.stopPropagation(); openEdit(product); }}
                           className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-600 transition-colors"
                           title="Modifier"
@@ -827,6 +1036,14 @@ export default function ProductsPage() {
         confirmLabel="Supprimer"
         variant="danger"
       />
+
+      {/* ── Promote Modal ── */}
+      {promoteTarget && (
+        <PromoteModal
+          product={promoteTarget}
+          onClose={() => setPromoteTarget(null)}
+        />
+      )}
     </div>
   );
 }
