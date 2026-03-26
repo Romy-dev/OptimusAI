@@ -212,54 +212,63 @@ class AnthropicProvider(BaseLLMProvider):
         return bool(self.api_key)
 
 
-# === Model routing configuration ===
+# === Intelligent Model Cascade ===
+# Each task has a prioritized list of (provider, model) pairs.
+# The router tries each in order, auto-skipping rate-limited or unavailable providers.
 
-TASK_MODEL_CONFIG = {
+TASK_MODEL_CASCADE = {
     "copywriting": {
-        "primary": "gemini",
-        "model": "gemini-2.5-pro",
-        "fallback": "ollama",
-        "fallback_model": "mistral:latest",
+        "cascade": [
+            ("gemini", "gemini-3-flash-preview"),
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("ollama", "mistral:latest"),
+            ("anthropic", "claude-haiku-4-5-20251001"),
+        ],
         "temperature": 0.8,
         "max_tokens": 1500,
     },
     "support": {
-        "primary": "gemini",
-        "model": "gemini-2.5-flash",
-        "fallback": "ollama",
-        "fallback_model": "mistral:latest",
+        "cascade": [
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("gemini", "gemini-2.5-flash-lite"),
+            ("ollama", "mistral:latest"),
+        ],
         "temperature": 0.3,
         "max_tokens": 500,
     },
     "reply": {
-        "primary": "gemini",
-        "model": "gemini-2.5-flash",
-        "fallback": "ollama",
-        "fallback_model": "mistral:latest",
+        "cascade": [
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("gemini", "gemini-2.5-flash-lite"),
+            ("ollama", "mistral:latest"),
+        ],
         "temperature": 0.5,
         "max_tokens": 300,
     },
     "classification": {
-        "primary": "gemini",
-        "model": "gemini-2.5-flash",
-        "fallback": "ollama",
-        "fallback_model": "mistral:latest",
+        "cascade": [
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("gemini", "gemini-2.5-flash-lite"),
+            ("ollama", "mistral:latest"),
+        ],
         "temperature": 0.0,
         "max_tokens": 50,
     },
     "moderation": {
-        "primary": "gemini",
-        "model": "gemini-2.5-flash",
-        "fallback": "ollama",
-        "fallback_model": "mistral:latest",
+        "cascade": [
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("gemini", "gemini-2.5-flash-lite"),
+            ("ollama", "mistral:latest"),
+        ],
         "temperature": 0.0,
         "max_tokens": 200,
     },
     "summary": {
-        "primary": "gemini",
-        "model": "gemini-2.5-flash",
-        "fallback": "ollama",
-        "fallback_model": "mistral:latest",
+        "cascade": [
+            ("gemini", "gemini-3-flash-preview"),
+            ("gemini", "gemini-3.1-flash-lite-preview"),
+            ("ollama", "mistral:latest"),
+        ],
         "temperature": 0.3,
         "max_tokens": 500,
     },
@@ -267,10 +276,15 @@ TASK_MODEL_CONFIG = {
 
 
 class LLMRouter:
-    """Routes LLM requests to the correct provider based on task type."""
+    """Intelligent LLM router with automatic cascade on rate limits.
+
+    Tries providers in priority order. When a provider returns 429 (rate limit),
+    it's temporarily disabled for that model and the next option is tried.
+    """
 
     def __init__(self):
         self.providers: dict[str, BaseLLMProvider] = {}
+        self._rate_limited: dict[str, float] = {}  # "provider:model" -> timestamp when usable again
         self._init_providers()
 
     def _init_providers(self):
@@ -280,65 +294,92 @@ class LLMRouter:
         if settings.anthropic_api_key:
             self.providers["anthropic"] = AnthropicProvider()
 
+    def _is_rate_limited(self, provider: str, model: str) -> bool:
+        key = f"{provider}:{model}"
+        if key not in self._rate_limited:
+            return False
+        if time.time() > self._rate_limited[key]:
+            del self._rate_limited[key]
+            return False
+        return True
+
+    def _mark_rate_limited(self, provider: str, model: str, retry_after: int = 60):
+        key = f"{provider}:{model}"
+        self._rate_limited[key] = time.time() + retry_after
+        logger.warning("llm_rate_limited", provider=provider, model=model, retry_after=retry_after)
+
     async def generate(
         self,
         task_type: str,
         messages: list[dict],
         **overrides,
     ) -> LLMResponse:
-        """Generate a response for a specific task type."""
-        config = TASK_MODEL_CONFIG.get(task_type, TASK_MODEL_CONFIG["support"])
+        """Generate a response, cascading through providers on failure."""
+        config = TASK_MODEL_CASCADE.get(task_type, TASK_MODEL_CASCADE["support"])
+        cascade = config["cascade"]
 
-        request = LLMRequest(
-            messages=messages,
-            model=overrides.get("model", config.get("model")),
-            temperature=overrides.get("temperature", config.get("temperature", 0.7)),
-            max_tokens=overrides.get("max_tokens", config.get("max_tokens", 1024)),
-        )
+        temperature = overrides.get("temperature", config.get("temperature", 0.7))
+        max_tokens = overrides.get("max_tokens", config.get("max_tokens", 1024))
 
-        # Try primary provider
-        primary_name = config["primary"]
-        primary = self.providers.get(primary_name)
-        if primary:
+        last_error = None
+        for provider_name, model in cascade:
+            # Skip if provider not available
+            provider = self.providers.get(provider_name)
+            if not provider:
+                continue
+
+            # Skip if rate limited
+            if self._is_rate_limited(provider_name, model):
+                continue
+
+            request = LLMRequest(
+                messages=messages,
+                model=overrides.get("model", model),
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
             try:
-                if await primary.health_check():
-                    response = await primary.generate(request)
-                    logger.info(
-                        "llm_response",
-                        task=task_type,
-                        provider=primary_name,
-                        model=response.model,
-                        tokens=response.tokens_used,
-                        latency_ms=response.latency_ms,
-                    )
-                    return response
-            except Exception as e:
-                logger.warning(
-                    "llm_primary_failed",
-                    task=task_type,
-                    provider=primary_name,
-                    error=str(e),
-                )
+                if not await provider.health_check():
+                    continue
 
-        # Try fallback
-        fallback_name = config.get("fallback")
-        if fallback_name:
-            fallback = self.providers.get(fallback_name)
-            if fallback:
-                request.model = config.get("fallback_model")
-                response = await fallback.generate(request)
+                response = await provider.generate(request)
                 logger.info(
-                    "llm_response_fallback",
+                    "llm_response",
                     task=task_type,
-                    provider=fallback_name,
+                    provider=provider_name,
                     model=response.model,
                     tokens=response.tokens_used,
                     latency_ms=response.latency_ms,
                 )
                 return response
 
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+
+                # Detect rate limiting (429)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "rate" in error_str.lower():
+                    # Extract retry delay if available
+                    retry_after = 60
+                    import re
+                    match = re.search(r'retry in (\d+)', error_str.lower())
+                    if match:
+                        retry_after = int(match.group(1)) + 5
+                    self._mark_rate_limited(provider_name, model, retry_after)
+                else:
+                    logger.warning(
+                        "llm_cascade_failed",
+                        task=task_type,
+                        provider=provider_name,
+                        model=model,
+                        error=error_str[:100],
+                    )
+
         from app.core.exceptions import LLMUnavailableError
-        raise LLMUnavailableError(f"No LLM provider available for task: {task_type}")
+        raise LLMUnavailableError(
+            f"All providers exhausted for task '{task_type}'. Last error: {last_error}"
+        )
 
 
 # Singleton
