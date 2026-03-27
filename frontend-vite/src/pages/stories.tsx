@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { getPersistedValue, setPersistedValue } from "@/hooks/use-persisted-state";
 import { toast } from "sonner";
 import {
   Film, Play, Pause, Download, ChevronLeft, ChevronRight, Sparkles,
@@ -156,9 +157,8 @@ export default function StoriesPage() {
   // Restore state from localStorage on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("optimus-story-state");
-      if (saved) {
-        const s = JSON.parse(saved);
+      const s = getPersistedValue<any>("story-state", null);
+      if (s) {
         if (s.storyPlan?.slides?.length) {
           setStoryPlan(s.storyPlan);
           setBrief(s.brief || "");
@@ -180,9 +180,9 @@ export default function StoriesPage() {
   useEffect(() => {
     if (storyPlan && pageState !== "initial" && pageState !== "planning") {
       try {
-        localStorage.setItem("optimus-story-state", JSON.stringify({
+        setPersistedValue("story-state", {
           storyPlan, brief, platform, brandId, musicMood, videoUrl, storyId,
-        }));
+        });
       } catch {}
     }
   }, [storyPlan, brief, platform, brandId, musicMood, videoUrl, pageState, storyId]);
@@ -1045,7 +1045,7 @@ export default function StoriesPage() {
                           setActiveSlide(0);
                           setRenderProgress({});
                           setStoryId(null);
-                          localStorage.removeItem("optimus-story-state");
+                          setPersistedValue("story-state", null);
                         }}
                         className="flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold w-full bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
                       >

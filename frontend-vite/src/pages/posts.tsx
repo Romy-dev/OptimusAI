@@ -1,5 +1,6 @@
 
 import { useState, useMemo, useEffect } from "react";
+import { getPersistedValue, setPersistedValue } from "@/hooks/use-persisted-state";
 import { useNavigate } from "react-router-dom";
 import {
   Plus, Zap, FileText, Clock, CheckCircle, XCircle, Globe, Eye,
@@ -233,40 +234,28 @@ export default function PostsPage() {
   const { data: brandList } = useApi(() => brandsApi.list(), []);
 
   const [mode, setMode] = useState<Mode>(() => {
-    try { return localStorage.getItem("optimus-gen-result") ? "generate" : "list"; } catch { return "list"; }
+    return getPersistedValue("gen-result", null) ? "generate" : "list";
   });
   const [statusFilter, setStatusFilter] = useState("all");
 
-  // Generator state — persisted to survive page refresh
-  const [brief, setBrief] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("optimus-gen-brief") || '""'); } catch { return ""; }
-  });
-  const [channel, setChannel] = useState(() => {
-    try { return localStorage.getItem("optimus-gen-channel") || "facebook"; } catch { return "facebook"; }
-  });
+  // Generator state — persisted per tenant to survive page refresh
+  const [brief, setBrief] = useState(() => getPersistedValue("gen-brief", ""));
+  const [channel, setChannel] = useState(() => getPersistedValue("gen-channel", "facebook"));
   const [selectedBrandId, setSelectedBrandId] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [generatedPost, setGeneratedPost] = useState<Post | null>(() => {
-    try { const s = localStorage.getItem("optimus-gen-result"); return s ? JSON.parse(s) : null; } catch { return null; }
-  });
+  const [generatedPost, setGeneratedPost] = useState<Post | null>(() => getPersistedValue("gen-result", null));
   const [genError, setGenError] = useState<string | null>(null);
-  const [generatorStep, setGeneratorStep] = useState<GeneratorStep>(() => {
-    try { const s = localStorage.getItem("optimus-gen-result"); return s ? "result" : "input"; } catch { return "input"; }
-  });
+  const [generatorStep, setGeneratorStep] = useState<GeneratorStep>(() =>
+    getPersistedValue("gen-result", null) ? "result" : "input"
+  );
   const [editingGenerated, setEditingGenerated] = useState(false);
   const [editedGeneratedContent, setEditedGeneratedContent] = useState("");
 
-  // Persist generator state
+  // Persist generator state (tenant-isolated)
   useEffect(() => {
-    try {
-      localStorage.setItem("optimus-gen-brief", JSON.stringify(brief));
-      localStorage.setItem("optimus-gen-channel", channel);
-      if (generatedPost) {
-        localStorage.setItem("optimus-gen-result", JSON.stringify(generatedPost));
-      } else {
-        localStorage.removeItem("optimus-gen-result");
-      }
-    } catch {}
+    setPersistedValue("gen-brief", brief);
+    setPersistedValue("gen-channel", channel);
+    setPersistedValue("gen-result", generatedPost);
   }, [brief, channel, generatedPost]);
 
   // Manual creation
