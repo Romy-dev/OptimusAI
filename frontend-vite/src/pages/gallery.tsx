@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import {
   ImageIcon, Loader2, Zap, Sparkles, X, Trash2, Layout,
   Send, Facebook, Instagram, MessageCircle, ExternalLink, FileText,
+  Film, Play, Clock, Video, Download,
 } from "lucide-react";
 import { GenerationProgress } from "@/components/ui/generation-progress";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ import {
 } from "@/lib/api";
 
 type GenMode = "image" | "poster";
+type MediaFilter = "all" | "image" | "video";
 
 export default function GalleryPage() {
   const { data: brandList } = useApi(() => brandsApi.list(), []);
@@ -26,6 +28,8 @@ export default function GalleryPage() {
   const [error, setError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState<GalleryImage | null>(null);
   const [createPostImage, setCreatePostImage] = useState<GalleryImage | null>(null);
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
+  const [videoFullscreen, setVideoFullscreen] = useState<GalleryImage | null>(null);
 
   const brandId = brandList?.[0]?.id;
 
@@ -69,26 +73,71 @@ export default function GalleryPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Supprimer cette image ?")) return;
+    if (!confirm("Supprimer ce media ?")) return;
     try {
       await galleryApi.delete(id);
-      toast.success("Image supprimee");
+      toast.success("Media supprime");
       refetch();
       setFullscreen(null);
+      setVideoFullscreen(null);
     } catch { /* ignore */ }
   };
 
-  const images = savedImages || [];
-  const posters = images.filter((i) => i.metadata?.type === "poster");
-  const photos = images.filter((i) => i.metadata?.type !== "poster");
+  const allItems = savedImages || [];
+
+  // Separate images and videos
+  const imageItems = allItems.filter((i) => i.media_type !== "video");
+  const videoItems = allItems.filter((i) => i.media_type === "video");
+
+  // Apply filter
+  const filteredItems = mediaFilter === "image"
+    ? imageItems
+    : mediaFilter === "video"
+    ? videoItems
+    : allItems;
+
+  const posters = filteredItems.filter((i) => i.media_type !== "video" && i.metadata?.type === "poster");
+  const photos = filteredItems.filter((i) => i.media_type !== "video" && i.metadata?.type !== "poster");
+  const videos = filteredItems.filter((i) => i.media_type === "video");
+
+  const MEDIA_TABS: { key: MediaFilter; label: string; icon: React.ElementType; count: number }[] = [
+    { key: "all", label: "Tout", icon: Layout, count: allItems.length },
+    { key: "image", label: "Images", icon: ImageIcon, count: imageItems.length },
+    { key: "video", label: "Videos", icon: Video, count: videoItems.length },
+  ];
 
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Studio Creatif IA</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Media Center</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Generez des visuels marketing et des affiches professionnelles
+          {imageItems.length} image{imageItems.length !== 1 ? "s" : ""} · {videoItems.length} video{videoItems.length !== 1 ? "s" : ""}
         </p>
+      </div>
+
+      {/* Media filter tabs */}
+      <div className="flex items-center gap-2">
+        {MEDIA_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setMediaFilter(tab.key)}
+            className={cn(
+              "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all",
+              mediaFilter === tab.key
+                ? "bg-brand-500 text-white shadow-sm"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            )}
+          >
+            <tab.icon className="h-4 w-4" />
+            {tab.label}
+            <span className={cn(
+              "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+              mediaFilter === tab.key ? "bg-white/20 text-white" : "bg-gray-200 text-gray-500"
+            )}>
+              {tab.count}
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* Generator */}
@@ -157,6 +206,27 @@ export default function GalleryPage() {
         )}
       </div>
 
+      {/* Videos section */}
+      {videos.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Film className="h-4 w-4 text-indigo-500" />
+            <p className="section-label">Videos ({videos.length})</p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {videos.map((item) => (
+              <VideoCard
+                key={item.id}
+                item={item}
+                onView={setVideoFullscreen}
+                onDelete={handleDelete}
+                onCreatePost={setCreatePostImage}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Posters section */}
       {posters.length > 0 && (
         <div>
@@ -187,12 +257,16 @@ export default function GalleryPage() {
         </div>
       )}
 
-      {images.length === 0 && !generating && (
+      {filteredItems.length === 0 && !generating && (
         <div className="surface flex flex-col items-center py-16 text-center">
           <Sparkles className="h-12 w-12 text-gray-200" />
-          <p className="mt-4 text-sm font-medium text-gray-500">Votre studio est vide</p>
+          <p className="mt-4 text-sm font-medium text-gray-500">
+            {mediaFilter === "video" ? "Aucune video" : mediaFilter === "image" ? "Aucune image" : "Votre studio est vide"}
+          </p>
           <p className="mt-1 text-xs text-gray-400">
-            Creez votre premiere affiche marketing ou generez une photo IA
+            {mediaFilter === "all"
+              ? "Creez votre premiere affiche marketing ou generez une photo IA"
+              : `Aucun contenu de type ${mediaFilter === "video" ? "video" : "image"} pour le moment`}
           </p>
         </div>
       )}
@@ -206,7 +280,7 @@ export default function GalleryPage() {
         />
       )}
 
-      {/* Fullscreen modal */}
+      {/* Fullscreen image modal */}
       {fullscreen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setFullscreen(null)}>
           <button onClick={() => setFullscreen(null)} className="absolute top-4 right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20 transition-colors">
@@ -228,6 +302,125 @@ export default function GalleryPage() {
           </div>
         </div>
       )}
+
+      {/* Fullscreen video modal */}
+      {videoFullscreen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setVideoFullscreen(null)}>
+          <button onClick={() => setVideoFullscreen(null)} className="absolute top-4 right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20 transition-colors z-10">
+            <X className="h-6 w-6" />
+          </button>
+          <div className="relative max-h-[90vh] max-w-[90vw] w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="rounded-2xl overflow-hidden bg-black shadow-2xl">
+              <video
+                src={videoFullscreen.image_url}
+                controls
+                autoPlay
+                className="w-full"
+                style={{ maxHeight: "75vh" }}
+              />
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/80 px-2 py-0.5 text-[9px] font-bold text-white mb-1">
+                  <Film className="h-2.5 w-2.5" /> VIDEO
+                </span>
+                <p className="text-sm text-white/80 truncate">{videoFullscreen.prompt}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={videoFullscreen.image_url}
+                  download
+                  className="rounded-lg bg-emerald-500/80 px-3 py-1.5 text-xs text-white hover:bg-emerald-500 transition-colors flex items-center gap-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Download className="h-3.5 w-3.5" /> Telecharger
+                </a>
+                <button onClick={() => handleDelete(videoFullscreen.id)} className="rounded-lg bg-red-500/80 px-3 py-1.5 text-xs text-white hover:bg-red-500 transition-colors">
+                  <Trash2 className="h-3.5 w-3.5 inline mr-1" /> Supprimer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VideoCard({
+  item,
+  onView,
+  onDelete,
+  onCreatePost,
+}: {
+  item: GalleryImage;
+  onView: (item: GalleryImage) => void;
+  onDelete: (id: string) => void;
+  onCreatePost: (item: GalleryImage) => void;
+}) {
+  const duration = item.metadata?.duration;
+
+  return (
+    <div
+      className="group relative rounded-2xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-lg transition-all cursor-pointer"
+      onClick={() => onView(item)}
+    >
+      {/* Video thumbnail or gradient placeholder */}
+      <div className="w-full aspect-square relative">
+        {item.metadata?.thumbnail_url ? (
+          <img
+            src={item.metadata.thumbnail_url}
+            alt={item.prompt}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 transition-transform duration-300 group-hover:scale-105" />
+        )}
+
+        {/* Play icon overlay */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border-2 border-white/30 group-hover:scale-110 transition-transform">
+            <Play className="h-6 w-6 text-white ml-1" fill="white" />
+          </div>
+        </div>
+
+        {/* Duration badge */}
+        {duration && (
+          <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/70 backdrop-blur-sm px-2 py-0.5">
+            <Clock className="h-2.5 w-2.5 text-white/80" />
+            <span className="text-[10px] font-semibold text-white">{duration}s</span>
+          </div>
+        )}
+
+        {/* Video badge top-left */}
+        <div className="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-indigo-500/80 backdrop-blur-sm px-2 py-0.5">
+          <Film className="h-2.5 w-2.5 text-white" />
+          <span className="text-[9px] font-bold text-white">VIDEO</span>
+        </div>
+      </div>
+
+      {/* Hover overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute bottom-0 left-0 right-0 p-3">
+          <p className="text-xs text-white/90 line-clamp-2">{item.prompt}</p>
+        </div>
+      </div>
+
+      {/* Create post button */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onCreatePost(item); }}
+        className="absolute top-2 right-2 rounded-full bg-brand-500/90 px-2.5 py-1 text-[10px] font-semibold text-white opacity-0 group-hover:opacity-100 hover:bg-brand-600 transition-all flex items-center gap-1 shadow-sm"
+      >
+        <FileText className="h-3 w-3" /> Creer un post
+      </button>
+
+      {/* Delete button */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+        className="absolute bottom-2 left-2 rounded-full bg-black/40 p-1.5 text-white opacity-0 group-hover:opacity-100 hover:bg-red-500 transition-all"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

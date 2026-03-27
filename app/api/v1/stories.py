@@ -7,15 +7,67 @@ import uuid
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
+from app.core.exceptions import NotFoundError
 from app.core.storage import storage_service
+from app.models.gallery import GeneratedImage
+from app.models.story import Story
 from app.models.user import User
 
 router = APIRouter(prefix="/stories", tags=["stories"])
 
+# ---------------------------------------------------------------------------
+# Ensure tables exist (idempotent DDL)
+# ---------------------------------------------------------------------------
+
+_INIT_SQL = """
+CREATE TABLE IF NOT EXISTS stories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    brand_id UUID REFERENCES brands(id),
+    created_by UUID REFERENCES users(id),
+    title VARCHAR(200),
+    brief TEXT NOT NULL,
+    platform VARCHAR(30) DEFAULT 'instagram',
+    story_plan JSONB DEFAULT '{}',
+    total_slides INTEGER DEFAULT 0,
+    total_duration_s INTEGER DEFAULT 0,
+    slide_images JSONB DEFAULT '[]',
+    video_url VARCHAR(500),
+    video_s3_key VARCHAR(500),
+    video_duration_s INTEGER,
+    music_mood VARCHAR(30),
+    status VARCHAR(30) DEFAULT 'draft',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE generated_images ADD COLUMN IF NOT EXISTS media_type VARCHAR(20) DEFAULT 'image';
+"""
+
+_tables_ensured = False
+
+
+async def _ensure_tables(session: AsyncSession) -> None:
+    """Run idempotent DDL the first time any story endpoint is hit."""
+    global _tables_ensured
+    if _tables_ensured:
+        return
+    for stmt in _INIT_SQL.strip().split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            await session.execute(text(stmt))
+    await session.commit()
+    _tables_ensured = True
+
+
+# ---------------------------------------------------------------------------
+# Request schemas
+# ---------------------------------------------------------------------------
 
 class StoryRequest(BaseModel):
     brief: str
@@ -26,9 +78,16 @@ class StoryRequest(BaseModel):
 
 
 class SlideImageRequest(BaseModel):
+    story_id: str | None = None  # optional — link to persisted story
     story_plan: dict
     brand_id: str
     slide_index: int | None = None  # None = all slides
+
+
+class StoryVideoRequest(BaseModel):
+    story_id: str | None = None  # optional — link to persisted story
+    story_plan: dict
+    brand_id: str
 
 
 class StoryConvertRequest(BaseModel):
@@ -36,13 +95,126 @@ class StoryConvertRequest(BaseModel):
     brand_id: str
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _story_to_dict(s: Story) -> dict:
+    return {
+        "id": str(s.id),
+        "tenant_id": str(s.tenant_id),
+        "brand_id": str(s.brand_id) if s.brand_id else None,
+        "created_by": str(s.created_by) if s.created_by else None,
+        "title": s.title,
+        "brief": s.brief,
+        "platform": s.platform,
+        "story_plan": s.story_plan,
+        "total_slides": s.total_slides,
+        "total_duration_s": s.total_duration_s,
+        "slide_images": s.slide_images,
+        "video_url": s.video_url,
+        "video_s3_key": s.video_s3_key,
+        "video_duration_s": s.video_duration_s,
+        "music_mood": s.music_mood,
+        "status": s.status,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+    }
+
+
+async def _get_story(session: AsyncSession, tenant_id, story_id: str) -> Story:
+    stmt = (
+        select(Story)
+        .where(Story.tenant_id == tenant_id)
+        .where(Story.id == uuid.UUID(story_id))
+    )
+    result = await session.execute(stmt)
+    story = result.scalar_one_or_none()
+    if not story:
+        raise NotFoundError("Story not found")
+    return story
+
+
+# ---------------------------------------------------------------------------
+# CRUD endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("")
+async def list_stories(
+    status: str | None = None,
+    platform: str | None = None,
+    limit: int = 50,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """List all stories for the tenant."""
+    await _ensure_tables(session)
+
+    stmt = select(Story).where(Story.tenant_id == user.tenant_id)
+    if status:
+        stmt = stmt.where(Story.status == status)
+    if platform:
+        stmt = stmt.where(Story.platform == platform)
+    stmt = stmt.order_by(Story.created_at.desc()).limit(min(limit, 200))
+
+    result = await session.execute(stmt)
+    stories = result.scalars().all()
+    return [_story_to_dict(s) for s in stories]
+
+
+@router.get("/{story_id}")
+async def get_story(
+    story_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get a single story with all its data."""
+    await _ensure_tables(session)
+    story = await _get_story(session, user.tenant_id, story_id)
+    return _story_to_dict(story)
+
+
+@router.delete("/{story_id}", status_code=204)
+async def delete_story(
+    story_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a story and its S3 assets."""
+    await _ensure_tables(session)
+    story = await _get_story(session, user.tenant_id, story_id)
+
+    # Best-effort S3 cleanup
+    s3_keys_to_delete = []
+    if story.video_s3_key:
+        s3_keys_to_delete.append(story.video_s3_key)
+    for slide in (story.slide_images or []):
+        if isinstance(slide, dict) and slide.get("s3_key"):
+            s3_keys_to_delete.append(slide["s3_key"])
+
+    for key in s3_keys_to_delete:
+        try:
+            await storage_service.delete_file(key)
+        except Exception:
+            pass
+
+    await session.delete(story)
+    await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Plan endpoint (with persistence)
+# ---------------------------------------------------------------------------
+
 @router.post("/plan")
 async def plan_story(
     body: StoryRequest,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Generate a story plan (slides sequence) using AI."""
+    """Generate a story plan (slides sequence) using AI and persist it."""
+    await _ensure_tables(session)
+
     from app.agents.registry import get_orchestrator
     from app.services.brand_service import BrandService
 
@@ -67,8 +239,33 @@ async def plan_story(
     if not result.success:
         return {"error": result.output.get("error", "Story generation failed")}
 
-    return result.output
+    # Persist the story
+    story_plan = result.output.get("story_plan", {})
+    story = Story(
+        tenant_id=user.tenant_id,
+        brand_id=uuid.UUID(body.brand_id) if body.brand_id else None,
+        created_by=user.id,
+        title=result.output.get("story_title") or story_plan.get("story_title"),
+        brief=body.brief,
+        platform=body.platform,
+        story_plan=story_plan,
+        total_slides=result.output.get("total_slides", len(story_plan.get("slides", []))),
+        total_duration_s=result.output.get("total_duration_s", 0),
+        music_mood=body.music_mood or result.output.get("music_mood"),
+        status="planned",
+    )
+    session.add(story)
+    await session.commit()
+    await session.refresh(story)
 
+    output = result.output
+    output["story_id"] = str(story.id)
+    return output
+
+
+# ---------------------------------------------------------------------------
+# Render endpoint (with persistence)
+# ---------------------------------------------------------------------------
 
 @router.post("/render")
 async def render_story(
@@ -77,7 +274,8 @@ async def render_story(
     session: AsyncSession = Depends(get_session),
 ):
     """Render story slides as images (1080x1920) using PosterAgent."""
-    import asyncio
+    await _ensure_tables(session)
+
     from app.agents.registry import get_orchestrator
 
     plan = body.story_plan
@@ -125,33 +323,54 @@ async def render_story(
                     "role": slide.get("role"),
                     "image_url": result.output["image_url"],
                     "s3_key": result.output.get("s3_key"),
+                    "rendered": True,
                 })
             else:
                 rendered.append({
                     "slide_index": idx,
                     "role": slide.get("role"),
                     "error": result.output.get("error", "Render failed"),
+                    "rendered": False,
                 })
         except Exception as e:
             rendered.append({
                 "slide_index": idx,
                 "role": slide.get("role"),
                 "error": str(e)[:100],
+                "rendered": False,
             })
 
+    # Persist rendered slides to the story record
+    if body.story_id:
+        try:
+            story = await _get_story(session, user.tenant_id, body.story_id)
+            story.slide_images = rendered
+            story.status = "rendered"
+            await session.commit()
+        except Exception:
+            pass  # story persistence is best-effort; don't break the response
+
     return {
+        "story_id": body.story_id,
         "rendered_slides": rendered,
         "total": len(rendered),
-        "success": sum(1 for r in rendered if "image_url" in r),
+        "success": sum(1 for r in rendered if r.get("rendered")),
     }
 
 
+# ---------------------------------------------------------------------------
+# Video endpoint (with persistence + gallery entry)
+# ---------------------------------------------------------------------------
+
 @router.post("/video")
 async def generate_video(
-    body: SlideImageRequest,
+    body: StoryVideoRequest,
     user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
     """Assemble rendered slides into a video with transitions and music."""
+    await _ensure_tables(session)
+
     import asyncio
     from app.integrations.story_video import generate_story_video
     from app.integrations.music_library import get_music_for_mood
@@ -200,7 +419,7 @@ async def generate_video(
             durations.append(dur)
             anim = slides[idx].get("animation", "fade") if idx < len(slides) else "fade"
             transitions.append(anim)
-        except Exception as e:
+        except Exception:
             continue
 
     if not slide_images:
@@ -235,7 +454,45 @@ async def generate_video(
 
     video_url = storage_service.get_public_url(s3_key)
 
+    # Persist to story record
+    if body.story_id:
+        try:
+            story = await _get_story(session, user.tenant_id, body.story_id)
+            story.video_url = video_url
+            story.video_s3_key = s3_key
+            story.video_duration_s = total_dur
+            story.music_mood = music_mood
+            story.status = "video_ready"
+            await session.commit()
+        except Exception:
+            pass
+
+    # Create a gallery entry so the video appears in the Media Center
+    try:
+        gallery_entry = GeneratedImage(
+            tenant_id=user.tenant_id,
+            created_by=user.id,
+            prompt=plan.get("story_title", "Story video"),
+            technical_prompt=f"Story video — {len(slide_images)} slides, {total_dur}s",
+            image_url=video_url,
+            s3_key=s3_key,
+            aspect_ratio="9:16",
+            media_type="video",
+            metadata_={
+                "type": "story_video",
+                "story_id": body.story_id,
+                "slides_count": len(slide_images),
+                "duration_s": total_dur,
+                "music_mood": music_mood,
+            },
+        )
+        session.add(gallery_entry)
+        await session.commit()
+    except Exception:
+        pass  # gallery entry is best-effort
+
     return {
+        "story_id": body.story_id,
         "video_url": video_url,
         "s3_key": s3_key,
         "duration_s": total_dur,
@@ -244,6 +501,10 @@ async def generate_video(
         "size_kb": len(video_bytes) // 1024,
     }
 
+
+# ---------------------------------------------------------------------------
+# Convert-formats endpoint (unchanged logic)
+# ---------------------------------------------------------------------------
 
 @router.post("/convert-formats")
 async def convert_to_all_formats(

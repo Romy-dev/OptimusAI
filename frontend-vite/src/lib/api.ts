@@ -367,7 +367,7 @@ export interface GalleryImage {
 }
 
 export const gallery = {
-  list: () => request<GalleryImage[]>("/gallery/images"),
+  list: (mediaType?: string) => request<any[]>(`/gallery/images${mediaType ? `?media_type=${mediaType}` : ''}`),
   delete: (id: string) => request<void>(`/gallery/images/${id}`, { method: "DELETE" }),
 };
 
@@ -495,6 +495,9 @@ export const stories = {
     request<any>('/stories/render', { method: 'POST', body: { story_plan, brand_id, slide_index } }),
   video: (story_plan: any) =>
     request<any>('/stories/video', { method: 'POST', body: { story_plan } }),
+  list: () => request<any[]>('/stories'),
+  get: (id: string) => request<any>(`/stories/${id}`),
+  delete: (id: string) => request<any>(`/stories/${id}`, { method: 'DELETE' }),
 };
 
 export const coach = {

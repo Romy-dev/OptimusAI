@@ -23,4 +23,5 @@ class GeneratedImage(Base, TenantMixin, TimestampMixin):
     image_url: Mapped[str] = mapped_column(String(500), nullable=False)
     s3_key: Mapped[str] = mapped_column(String(500), nullable=False)
     aspect_ratio: Mapped[str] = mapped_column(String(10), default="1:1")
+    media_type: Mapped[str] = mapped_column(String(20), default="image")  # "image" or "video"
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)

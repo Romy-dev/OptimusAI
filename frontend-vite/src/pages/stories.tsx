@@ -4,6 +4,7 @@ import {
   Film, Play, Pause, Download, ChevronLeft, ChevronRight, Sparkles,
   Image, Clock, Zap, Target, MousePointerClick, Music, Loader2,
   RefreshCw, Type, AlignLeft, Timer, Wand2, CheckCircle, Brain,
+  Trash2, Video, Layout, Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApi } from "@/hooks/use-api";
@@ -31,12 +32,26 @@ interface StoryPlan {
 
 type PageState = "initial" | "planning" | "planned" | "rendering" | "rendered" | "video_ready";
 type AnimationType = "fade_in" | "slide_up" | "zoom_in" | "bounce";
+type StoryTab = "create" | "history";
 
 const PLATFORMS = [
   { id: "instagram", label: "Instagram", icon: "📸" },
   { id: "facebook", label: "Facebook", icon: "📘" },
   { id: "whatsapp", label: "WhatsApp", icon: "💬" },
 ];
+
+const PLATFORM_BADGES: Record<string, { label: string; color: string }> = {
+  instagram: { label: "Instagram", color: "bg-pink-100 text-pink-700" },
+  facebook: { label: "Facebook", color: "bg-blue-100 text-blue-700" },
+  whatsapp: { label: "WhatsApp", color: "bg-emerald-100 text-emerald-700" },
+};
+
+const STATUS_BADGES: Record<string, { label: string; color: string }> = {
+  draft: { label: "Brouillon", color: "bg-gray-100 text-gray-600" },
+  planned: { label: "Planifie", color: "bg-sky-100 text-sky-700" },
+  rendered: { label: "Rendu", color: "bg-purple-100 text-purple-700" },
+  video_ready: { label: "Video prete", color: "bg-emerald-100 text-emerald-700" },
+};
 
 const ROLE_CONFIG: Record<string, { label: string; color: string; bgColor: string; icon: React.ElementType }> = {
   hook:    { label: "HOOK",    color: "text-amber-700",   bgColor: "bg-amber-100",   icon: Zap },
@@ -96,6 +111,14 @@ const QUICK_ACTIONS = [
 export default function StoriesPage() {
   const { data: brandList } = useApi(() => brandsApi.list(), []);
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<StoryTab>("create");
+
+  // Story history
+  const [storyHistory, setStoryHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [storyId, setStoryId] = useState<string | null>(null);
+
   // State
   const [brief, setBrief] = useState("");
   const [platform, setPlatform] = useState("instagram");
@@ -110,6 +133,26 @@ export default function StoriesPage() {
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const autoPlayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Fetch story history
+  const fetchHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const list = await storiesApi.list();
+      setStoryHistory(list || []);
+    } catch {
+      // Silently fail - history is optional
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
+  // Load history when switching to history tab
+  useEffect(() => {
+    if (activeTab === "history") {
+      fetchHistory();
+    }
+  }, [activeTab, fetchHistory]);
+
   // Restore state from localStorage on mount
   useEffect(() => {
     try {
@@ -123,6 +166,7 @@ export default function StoriesPage() {
           setBrandId(s.brandId || "");
           setMusicMood(s.musicMood || "upbeat");
           setVideoUrl(s.videoUrl || null);
+          setStoryId(s.storyId || null);
           setActiveSlide(0);
           // Determine state from data
           const hasRendered = s.storyPlan.slides.some((sl: any) => sl.image_url);
@@ -137,11 +181,11 @@ export default function StoriesPage() {
     if (storyPlan && pageState !== "initial" && pageState !== "planning") {
       try {
         localStorage.setItem("optimus-story-state", JSON.stringify({
-          storyPlan, brief, platform, brandId, musicMood, videoUrl,
+          storyPlan, brief, platform, brandId, musicMood, videoUrl, storyId,
         }));
       } catch {}
     }
-  }, [storyPlan, brief, platform, brandId, musicMood, videoUrl, pageState]);
+  }, [storyPlan, brief, platform, brandId, musicMood, videoUrl, pageState, storyId]);
 
   // Auto-select first brand
   useEffect(() => {
@@ -170,6 +214,7 @@ export default function StoriesPage() {
     setActiveSlide(0);
     setRenderProgress({});
     setVideoUrl(null);
+    setStoryId(null);
 
     try {
       const result = await storiesApi.plan(brief, brandId, platform);
@@ -190,6 +235,10 @@ export default function StoriesPage() {
       };
       setStoryPlan(plan);
       setPageState("planned");
+      // Track story_id if returned
+      if (result.story_id || result.id) {
+        setStoryId(result.story_id || result.id);
+      }
       toast.success(`Story planifiee : ${plan.slides.length} slides`);
     } catch (err: any) {
       setError(err.message || "Erreur lors de la planification");
@@ -248,6 +297,10 @@ export default function StoriesPage() {
         throw new Error(result.error);
       }
       setVideoUrl(result.video_url || result.url);
+      // Track story_id if returned
+      if (result.story_id || result.id) {
+        setStoryId(result.story_id || result.id);
+      }
       setPageState("video_ready");
       toast.success("Video generee avec succes !");
     } catch (err: any) {
@@ -274,6 +327,7 @@ export default function StoriesPage() {
     setActiveSlide(0);
     setRenderProgress({});
     setVideoUrl(null);
+    setStoryId(null);
 
     try {
       // Step 1: Plan
@@ -294,6 +348,9 @@ export default function StoriesPage() {
         theme: result.theme,
       };
       setStoryPlan(plan);
+      if (result.story_id || result.id) {
+        setStoryId(result.story_id || result.id);
+      }
       setPageState("rendering");
       toast.success(`${plan.slides.length} slides planifiées, rendu en cours...`);
 
@@ -318,6 +375,68 @@ export default function StoriesPage() {
     } catch (err: any) {
       setError(err.message || "Erreur");
       setPageState("initial");
+    }
+  };
+
+  // Load a saved story into the editor
+  const handleLoadStory = async (story: any) => {
+    try {
+      const full = await storiesApi.get(story.id);
+      const slides = (full.slides || full.story_plan?.slides || []).map((s: any, i: number) => ({
+        index: i,
+        role: s.role || ["hook", "detail", "urgency", "cta"][i % 4],
+        headline: s.headline || s.title || `Slide ${i + 1}`,
+        subtext: s.subtext || s.description || "",
+        duration: s.duration || 3,
+        animation: s.animation || "fade_in",
+        image_url: s.image_url,
+        rendered: !!s.image_url,
+      }));
+
+      const plan: StoryPlan = {
+        slides,
+        platform: full.platform || story.platform || "instagram",
+        brand_id: full.brand_id || story.brand_id || brandId,
+        theme: full.theme,
+      };
+
+      setStoryPlan(plan);
+      setBrief(full.brief || story.brief || "");
+      setPlatform(plan.platform);
+      if (plan.brand_id) setBrandId(plan.brand_id);
+      setStoryId(story.id);
+      setVideoUrl(full.video_url || null);
+      setActiveSlide(0);
+      setRenderProgress({});
+
+      // Determine page state
+      if (full.video_url) {
+        setPageState("video_ready");
+      } else if (slides.some((s: any) => s.image_url)) {
+        setPageState("rendered");
+      } else {
+        setPageState("planned");
+      }
+
+      setActiveTab("create");
+      toast.success("Story chargee dans l'editeur");
+    } catch (err: any) {
+      toast.error("Erreur lors du chargement", { description: err.message });
+    }
+  };
+
+  // Delete a saved story
+  const handleDeleteStory = async (id: string) => {
+    if (!confirm("Supprimer cette story ?")) return;
+    try {
+      await storiesApi.delete(id);
+      toast.success("Story supprimee");
+      setStoryHistory((prev) => prev.filter((s) => s.id !== id));
+      if (storyId === id) {
+        setStoryId(null);
+      }
+    } catch (err: any) {
+      toast.error("Erreur lors de la suppression", { description: err.message });
     }
   };
 
@@ -349,462 +468,627 @@ export default function StoriesPage() {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      {pageState === "initial" && (
-        <div className="mb-6">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Actions rapides</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {QUICK_ACTIONS.map((qa) => (
+      {/* Tab navigation */}
+      <div className="flex items-center gap-2 mb-6">
+        <button
+          onClick={() => setActiveTab("create")}
+          className={cn(
+            "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all",
+            activeTab === "create"
+              ? "bg-brand-500 text-white shadow-sm"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          )}
+        >
+          <Sparkles className="h-4 w-4" /> Creer
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={cn(
+            "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all",
+            activeTab === "history"
+              ? "bg-brand-500 text-white shadow-sm"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          )}
+        >
+          <Layout className="h-4 w-4" /> Mes Stories
+          {storyHistory.length > 0 && (
+            <span className={cn(
+              "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+              activeTab === "history" ? "bg-white/20 text-white" : "bg-gray-200 text-gray-500"
+            )}>
+              {storyHistory.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ─── History Tab ──────────────────────────────────────── */}
+      {activeTab === "history" && (
+        <div className="space-y-4">
+          {loadingHistory && (
+            <div className="surface flex items-center justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-brand-500" />
+              <span className="ml-2 text-sm text-gray-500">Chargement...</span>
+            </div>
+          )}
+
+          {!loadingHistory && storyHistory.length === 0 && (
+            <div className="surface flex flex-col items-center py-16 text-center">
+              <Film className="h-12 w-12 text-gray-200" />
+              <p className="mt-4 text-sm font-medium text-gray-500">Aucune story sauvegardee</p>
+              <p className="mt-1 text-xs text-gray-400">
+                Creez votre premiere story et elle apparaitra ici
+              </p>
               <button
-                key={qa.label}
-                onClick={() => handleQuickAction(qa)}
-                className={cn(
-                  "flex items-center gap-2 rounded-xl border border-gray-100 px-3 py-2.5 text-left transition-all hover:border-brand-200 hover:bg-brand-50/30 hover:shadow-sm",
-                  brief === qa.brief && "border-brand-400 bg-brand-50 shadow-sm"
-                )}
+                onClick={() => setActiveTab("create")}
+                className="mt-4 btn-primary px-6 py-2"
               >
-                <span className="text-lg">{qa.emoji}</span>
-                <span className="text-xs font-medium text-gray-700">{qa.label}</span>
+                <Sparkles className="h-4 w-4" /> Creer une story
               </button>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {!loadingHistory && storyHistory.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {storyHistory.map((story) => {
+                const slides = story.slides || story.story_plan?.slides || [];
+                const firstSlide = slides[0];
+                const platformBadge = PLATFORM_BADGES[story.platform] || PLATFORM_BADGES.instagram;
+                const statusKey = story.video_url ? "video_ready" : slides.some((s: any) => s.image_url) ? "rendered" : story.status || "draft";
+                const statusBadge = STATUS_BADGES[statusKey] || STATUS_BADGES.draft;
+                const totalDuration = slides.reduce((sum: number, s: any) => sum + (s.duration || 3), 0);
+                const createdDate = story.created_at ? new Date(story.created_at) : null;
+
+                return (
+                  <div
+                    key={story.id}
+                    className="surface overflow-hidden hover:shadow-lg transition-all cursor-pointer group"
+                    onClick={() => handleLoadStory(story)}
+                  >
+                    {/* Thumbnail */}
+                    <div className="relative aspect-video overflow-hidden">
+                      {firstSlide?.image_url ? (
+                        <img
+                          src={firstSlide.image_url}
+                          alt={firstSlide.headline || "Story"}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      ) : (
+                        <div className={cn(
+                          "w-full h-full bg-gradient-to-br flex items-center justify-center",
+                          GRADIENT_PRESETS[0]
+                        )}>
+                          <Film className="h-10 w-10 text-white/50" />
+                        </div>
+                      )}
+                      {/* Overlay badges */}
+                      <div className="absolute top-2 left-2 flex items-center gap-1.5">
+                        <span className={cn("rounded-lg px-2 py-0.5 text-[10px] font-bold", platformBadge.color)}>
+                          {platformBadge.label}
+                        </span>
+                        <span className={cn("rounded-lg px-2 py-0.5 text-[10px] font-bold", statusBadge.color)}>
+                          {statusBadge.label}
+                        </span>
+                      </div>
+                      {/* Video indicator */}
+                      {story.video_url && (
+                        <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/60 backdrop-blur-sm px-2 py-0.5">
+                          <Video className="h-3 w-3 text-white" />
+                          <span className="text-[10px] font-semibold text-white">Video</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card content */}
+                    <div className="p-4 space-y-2">
+                      {/* Title / brief */}
+                      <p className="text-sm font-semibold text-gray-900 line-clamp-2">
+                        {story.brief || firstSlide?.headline || "Story sans titre"}
+                      </p>
+
+                      {/* Meta */}
+                      <div className="flex items-center gap-3 text-[11px] text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <Film className="h-3 w-3" />
+                          {slides.length} slide{slides.length !== 1 ? "s" : ""}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {totalDuration}s
+                        </span>
+                        {createdDate && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {createdDate.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Delete button */}
+                      <div className="flex justify-end pt-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteStory(story.id); }}
+                          className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                        >
+                          <Trash2 className="h-3 w-3" /> Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Two-column layout */}
-      <div className="flex gap-6 items-start">
-        {/* ─── Left Column (60%) ─────────────────────────────── */}
-        <div className="flex-1 min-w-0 space-y-5" style={{ flex: "0 0 60%" }}>
+      {/* ─── Create Tab ───────────────────────────────────────── */}
+      {activeTab === "create" && (
+        <>
+          {/* Quick Actions */}
+          {pageState === "initial" && (
+            <div className="mb-6">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Actions rapides</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {QUICK_ACTIONS.map((qa) => (
+                  <button
+                    key={qa.label}
+                    onClick={() => handleQuickAction(qa)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-xl border border-gray-100 px-3 py-2.5 text-left transition-all hover:border-brand-200 hover:bg-brand-50/30 hover:shadow-sm",
+                      brief === qa.brief && "border-brand-400 bg-brand-50 shadow-sm"
+                    )}
+                  >
+                    <span className="text-lg">{qa.emoji}</span>
+                    <span className="text-xs font-medium text-gray-700">{qa.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-          {/* Brief Input Section */}
-          <div className="surface p-5 space-y-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Sparkles className="h-4 w-4 text-brand-500" />
-              <h2 className="text-sm font-bold text-gray-900">Brief de la Story</h2>
+          {/* Two-column layout */}
+          <div className="flex gap-6 items-start">
+            {/* ─── Left Column (60%) ─────────────────────────────── */}
+            <div className="flex-1 min-w-0 space-y-5" style={{ flex: "0 0 60%" }}>
+
+              {/* Brief Input Section */}
+              <div className="surface p-5 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Sparkles className="h-4 w-4 text-brand-500" />
+                  <h2 className="text-sm font-bold text-gray-900">Brief de la Story</h2>
+                  {storyId && (
+                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-bold text-brand-600">
+                      Story sauvegardee
+                    </span>
+                  )}
+                </div>
+
+                <textarea
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  placeholder="Decrivez votre story (ex: Promo -50% ce weekend sur toute la collection)"
+                  rows={3}
+                  className="input-base w-full resize-none"
+                />
+
+                {/* Platform pills */}
+                <div>
+                  <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                    Plateforme
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {PLATFORMS.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => setPlatform(p.id)}
+                        className={cn(
+                          "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200",
+                          platform === p.id
+                            ? "bg-brand-500 text-white shadow-sm shadow-brand-500/20"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        )}
+                      >
+                        <span>{p.icon}</span> {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Brand selector */}
+                {brandList && brandList.length > 1 && (
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                      Marque
+                    </label>
+                    <select
+                      value={brandId}
+                      onChange={(e) => setBrandId(e.target.value)}
+                      className="input-base w-full"
+                    >
+                      {brandList.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Generate buttons */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleGenerate}
+                    disabled={!brief.trim() || !brandId || pageState === "planning" || pageState === "rendering"}
+                    className="btn-primary py-3 text-sm font-bold"
+                  >
+                    {pageState === "planning" ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> Planification...</>
+                    ) : (
+                      <><Sparkles className="h-4 w-4" /> Planifier</>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleOneClick}
+                    disabled={!brief.trim() || !brandId || pageState === "planning" || pageState === "rendering"}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-500 to-purple-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 hover:shadow-xl transition-all disabled:opacity-50"
+                  >
+                    {pageState === "rendering" ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> Rendu en cours...</>
+                    ) : (
+                      <><Wand2 className="h-4 w-4" /> Tout en un</>
+                    )}
+                  </button>
+                </div>
+
+                {error && (
+                  <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-600">
+                    {error}
+                  </div>
+                )}
+              </div>
+
+              {/* Planning Progress */}
+              {pageState === "planning" && (
+                <StoryProgress steps={PLANNING_STEPS} />
+              )}
+
+              {/* Story Timeline */}
+              {storyPlan && pageState !== "planning" && (
+                <div className="surface p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Film className="h-4 w-4 text-brand-500" />
+                      <h2 className="text-sm font-bold text-gray-900">Timeline</h2>
+                      <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-bold text-brand-600">
+                        {storyPlan.slides.length} slides
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Progress dots */}
+                  <div className="flex items-center gap-1 justify-center">
+                    {storyPlan.slides.map((_, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          "h-1.5 rounded-full transition-all duration-300",
+                          i === activeSlide ? "w-6 bg-brand-500" : "w-1.5 bg-gray-200"
+                        )}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Horizontal scrollable thumbnails */}
+                  <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scroll-smooth">
+                    {storyPlan.slides.map((slide, i) => {
+                      const roleConf = ROLE_CONFIG[slide.role] || ROLE_CONFIG.detail;
+                      const RoleIcon = roleConf.icon;
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => setActiveSlide(i)}
+                          className={cn(
+                            "relative flex-shrink-0 w-28 rounded-2xl overflow-hidden transition-all duration-300 group",
+                            i === activeSlide
+                              ? "ring-2 ring-brand-500 ring-offset-2 shadow-lg shadow-brand-500/10 scale-105"
+                              : "ring-1 ring-gray-200 hover:ring-brand-200 hover:shadow-md"
+                          )}
+                        >
+                          {/* Thumbnail content */}
+                          <div
+                            className={cn(
+                              "aspect-[9/16] flex flex-col items-center justify-center p-2 text-center",
+                              slide.image_url
+                                ? ""
+                                : `bg-gradient-to-br ${GRADIENT_PRESETS[i % GRADIENT_PRESETS.length]}`
+                            )}
+                            style={slide.image_url ? {
+                              backgroundImage: `url(${slide.image_url})`,
+                              backgroundSize: "cover",
+                              backgroundPosition: "center",
+                            } : undefined}
+                          >
+                            {slide.image_url && (
+                              <div className="absolute inset-0 bg-black/30" />
+                            )}
+                            <div className="relative z-10 flex flex-col items-center gap-1">
+                              <span className="text-[9px] font-bold text-white/70">
+                                {i + 1}
+                              </span>
+                              <p className="text-[9px] font-bold text-white leading-tight line-clamp-2">
+                                {slide.headline}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Role badge */}
+                          <div className={cn(
+                            "absolute top-1.5 left-1.5 flex items-center gap-0.5 rounded-md px-1.5 py-0.5",
+                            roleConf.bgColor
+                          )}>
+                            <RoleIcon className={cn("h-2 w-2", roleConf.color)} />
+                            <span className={cn("text-[7px] font-bold", roleConf.color)}>
+                              {roleConf.label}
+                            </span>
+                          </div>
+
+                          {/* Render status */}
+                          {slide.rendered && (
+                            <div className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500">
+                              <CheckCircle className="h-2.5 w-2.5 text-white" />
+                            </div>
+                          )}
+                          {renderProgress[i] && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                              <Loader2 className="h-5 w-5 text-white animate-spin" />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Slide Editor */}
+              {storyPlan && currentSlide && pageState !== "planning" && (
+                <div className="surface p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Type className="h-4 w-4 text-brand-500" />
+                      <h2 className="text-sm font-bold text-gray-900">
+                        Editeur — Slide {activeSlide + 1}
+                      </h2>
+                      {(() => {
+                        const rc = ROLE_CONFIG[currentSlide.role] || ROLE_CONFIG.detail;
+                        return (
+                          <span className={cn("flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-bold", rc.bgColor, rc.color)}>
+                            <rc.icon className="h-3 w-3" /> {rc.label}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Headline */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                      Titre principal
+                    </label>
+                    <input
+                      type="text"
+                      value={currentSlide.headline}
+                      onChange={(e) => updateSlide("headline", e.target.value)}
+                      className="input-base w-full font-semibold"
+                    />
+                  </div>
+
+                  {/* Subtext */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                      Sous-texte
+                    </label>
+                    <input
+                      type="text"
+                      value={currentSlide.subtext}
+                      onChange={(e) => updateSlide("subtext", e.target.value)}
+                      className="input-base w-full"
+                    />
+                  </div>
+
+                  {/* Duration slider */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-2">
+                      <Clock className="h-3 w-3" /> Duree : {currentSlide.duration}s
+                    </label>
+                    <input
+                      type="range"
+                      min={2}
+                      max={6}
+                      step={0.5}
+                      value={currentSlide.duration}
+                      onChange={(e) => updateSlide("duration", parseFloat(e.target.value))}
+                      className="w-full accent-brand-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                      <span>2s</span><span>4s</span><span>6s</span>
+                    </div>
+                  </div>
+
+                  {/* Animation selector */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                      Animation
+                    </label>
+                    <div className="flex gap-2">
+                      {ANIMATIONS.map((anim) => (
+                        <button
+                          key={anim.id}
+                          onClick={() => updateSlide("animation", anim.id)}
+                          className={cn(
+                            "flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[11px] font-medium transition-all",
+                            currentSlide.animation === anim.id
+                              ? "bg-brand-500 text-white shadow-sm"
+                              : "bg-gray-50 text-gray-500 hover:bg-gray-100"
+                          )}
+                        >
+                          <anim.icon className="h-4 w-4" />
+                          {anim.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Render buttons */}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => handleRenderSlide(activeSlide)}
+                      disabled={renderProgress[activeSlide]}
+                      className="btn-primary flex-1 py-2.5"
+                    >
+                      {renderProgress[activeSlide] ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Rendu en cours...</>
+                      ) : (
+                        <><Image className="h-4 w-4" /> Rendre cette slide</>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleRenderAll}
+                      disabled={pageState === "rendering"}
+                      className={cn(
+                        "flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all",
+                        "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-sm hover:shadow-md active:scale-[0.98]"
+                      )}
+                    >
+                      {pageState === "rendering" ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Rendu...</>
+                      ) : (
+                        <><RefreshCw className="h-4 w-4" /> Toutes les slides</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Video Section */}
+              {(pageState === "rendered" || pageState === "video_ready" || pageState === "rendering") && storyPlan && (
+                <div className="surface p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Music className="h-4 w-4 text-brand-500" />
+                    <h2 className="text-sm font-bold text-gray-900">Video Story</h2>
+                  </div>
+
+                  {/* Music mood selector */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                      Ambiance musicale
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {MUSIC_MOODS.map((mood) => (
+                        <button
+                          key={mood.id}
+                          onClick={() => setMusicMood(mood.id)}
+                          className={cn(
+                            "flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium transition-all",
+                            musicMood === mood.id
+                              ? "bg-brand-500 text-white shadow-sm"
+                              : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                          )}
+                        >
+                          <span>{mood.emoji}</span> {mood.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Generate video button */}
+                  {!videoUrl && (
+                    <button
+                      onClick={handleGenerateVideo}
+                      disabled={pageState === "rendering"}
+                      className="btn-primary w-full py-3 text-sm font-bold"
+                    >
+                      {pageState === "rendering" ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Generation video...</>
+                      ) : (
+                        <><Film className="h-4 w-4" /> Generer la video</>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Video player */}
+                  {videoUrl && (
+                    <div className="space-y-3">
+                      <div className="rounded-2xl overflow-hidden bg-black">
+                        <video
+                          src={videoUrl}
+                          controls
+                          className="w-full"
+                          style={{ maxHeight: 400 }}
+                        />
+                      </div>
+                      <a
+                        href={videoUrl}
+                        download="story.mp4"
+                        className={cn(
+                          "flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold w-full transition-all",
+                          "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm hover:shadow-md active:scale-[0.98]"
+                        )}
+                      >
+                        <Download className="h-4 w-4" /> Telecharger la video
+                      </a>
+                      <button
+                        onClick={() => {
+                          setPageState("initial");
+                          setBrief("");
+                          setStoryPlan(null);
+                          setVideoUrl(null);
+                          setActiveSlide(0);
+                          setRenderProgress({});
+                          setStoryId(null);
+                          localStorage.removeItem("optimus-story-state");
+                        }}
+                        className="flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold w-full bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
+                      >
+                        <RefreshCw className="h-4 w-4" /> Nouvelle Story
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <textarea
-              value={brief}
-              onChange={(e) => setBrief(e.target.value)}
-              placeholder="Decrivez votre story (ex: Promo -50% ce weekend sur toute la collection)"
-              rows={3}
-              className="input-base w-full resize-none"
-            />
-
-            {/* Platform pills */}
-            <div>
-              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
-                Plateforme
-              </label>
-              <div className="flex items-center gap-2">
-                {PLATFORMS.map((p) => (
+            {/* ─── Right Column (40%) — Phone Preview ────────────── */}
+            <div className="sticky top-6" style={{ flex: "0 0 37%" }}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                  Apercu en direct
+                </p>
+                {storyPlan && (
                   <button
-                    key={p.id}
-                    onClick={() => setPlatform(p.id)}
+                    onClick={() => setIsAutoPlaying(!isAutoPlaying)}
                     className={cn(
-                      "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200",
-                      platform === p.id
-                        ? "bg-brand-500 text-white shadow-sm shadow-brand-500/20"
+                      "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all",
+                      isAutoPlaying
+                        ? "bg-brand-500 text-white"
                         : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     )}
                   >
-                    <span>{p.icon}</span> {p.label}
+                    {isAutoPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                    {isAutoPlaying ? "Pause" : "Lecture"}
                   </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Brand selector */}
-            {brandList && brandList.length > 1 && (
-              <div>
-                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
-                  Marque
-                </label>
-                <select
-                  value={brandId}
-                  onChange={(e) => setBrandId(e.target.value)}
-                  className="input-base w-full"
-                >
-                  {brandList.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Generate buttons */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={handleGenerate}
-                disabled={!brief.trim() || !brandId || pageState === "planning" || pageState === "rendering"}
-                className="btn-primary py-3 text-sm font-bold"
-              >
-                {pageState === "planning" ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" /> Planification...</>
-                ) : (
-                  <><Sparkles className="h-4 w-4" /> Planifier</>
                 )}
-              </button>
-              <button
-                onClick={handleOneClick}
-                disabled={!brief.trim() || !brandId || pageState === "planning" || pageState === "rendering"}
-                className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-500 to-purple-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 hover:shadow-xl transition-all disabled:opacity-50"
-              >
-                {pageState === "rendering" ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" /> Rendu en cours...</>
-                ) : (
-                  <><Wand2 className="h-4 w-4" /> Tout en un</>
-                )}
-              </button>
-            </div>
-
-            {error && (
-              <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-600">
-                {error}
               </div>
-            )}
+
+              <StoryPhonePreview
+                slides={storyPlan?.slides || []}
+                activeSlide={activeSlide}
+                onSlideChange={setActiveSlide}
+                pageState={pageState}
+              />
+            </div>
           </div>
-
-          {/* Planning Progress */}
-          {pageState === "planning" && (
-            <StoryProgress steps={PLANNING_STEPS} />
-          )}
-
-          {/* Story Timeline */}
-          {storyPlan && pageState !== "planning" && (
-            <div className="surface p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Film className="h-4 w-4 text-brand-500" />
-                  <h2 className="text-sm font-bold text-gray-900">Timeline</h2>
-                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-bold text-brand-600">
-                    {storyPlan.slides.length} slides
-                  </span>
-                </div>
-              </div>
-
-              {/* Progress dots */}
-              <div className="flex items-center gap-1 justify-center">
-                {storyPlan.slides.map((_, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      "h-1.5 rounded-full transition-all duration-300",
-                      i === activeSlide ? "w-6 bg-brand-500" : "w-1.5 bg-gray-200"
-                    )}
-                  />
-                ))}
-              </div>
-
-              {/* Horizontal scrollable thumbnails */}
-              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scroll-smooth">
-                {storyPlan.slides.map((slide, i) => {
-                  const roleConf = ROLE_CONFIG[slide.role] || ROLE_CONFIG.detail;
-                  const RoleIcon = roleConf.icon;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => setActiveSlide(i)}
-                      className={cn(
-                        "relative flex-shrink-0 w-28 rounded-2xl overflow-hidden transition-all duration-300 group",
-                        i === activeSlide
-                          ? "ring-2 ring-brand-500 ring-offset-2 shadow-lg shadow-brand-500/10 scale-105"
-                          : "ring-1 ring-gray-200 hover:ring-brand-200 hover:shadow-md"
-                      )}
-                    >
-                      {/* Thumbnail content */}
-                      <div
-                        className={cn(
-                          "aspect-[9/16] flex flex-col items-center justify-center p-2 text-center",
-                          slide.image_url
-                            ? ""
-                            : `bg-gradient-to-br ${GRADIENT_PRESETS[i % GRADIENT_PRESETS.length]}`
-                        )}
-                        style={slide.image_url ? {
-                          backgroundImage: `url(${slide.image_url})`,
-                          backgroundSize: "cover",
-                          backgroundPosition: "center",
-                        } : undefined}
-                      >
-                        {slide.image_url && (
-                          <div className="absolute inset-0 bg-black/30" />
-                        )}
-                        <div className="relative z-10 flex flex-col items-center gap-1">
-                          <span className="text-[9px] font-bold text-white/70">
-                            {i + 1}
-                          </span>
-                          <p className="text-[9px] font-bold text-white leading-tight line-clamp-2">
-                            {slide.headline}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Role badge */}
-                      <div className={cn(
-                        "absolute top-1.5 left-1.5 flex items-center gap-0.5 rounded-md px-1.5 py-0.5",
-                        roleConf.bgColor
-                      )}>
-                        <RoleIcon className={cn("h-2 w-2", roleConf.color)} />
-                        <span className={cn("text-[7px] font-bold", roleConf.color)}>
-                          {roleConf.label}
-                        </span>
-                      </div>
-
-                      {/* Render status */}
-                      {slide.rendered && (
-                        <div className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500">
-                          <CheckCircle className="h-2.5 w-2.5 text-white" />
-                        </div>
-                      )}
-                      {renderProgress[i] && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                          <Loader2 className="h-5 w-5 text-white animate-spin" />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Slide Editor */}
-          {storyPlan && currentSlide && pageState !== "planning" && (
-            <div className="surface p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Type className="h-4 w-4 text-brand-500" />
-                  <h2 className="text-sm font-bold text-gray-900">
-                    Editeur — Slide {activeSlide + 1}
-                  </h2>
-                  {(() => {
-                    const rc = ROLE_CONFIG[currentSlide.role] || ROLE_CONFIG.detail;
-                    return (
-                      <span className={cn("flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-bold", rc.bgColor, rc.color)}>
-                        <rc.icon className="h-3 w-3" /> {rc.label}
-                      </span>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Headline */}
-              <div>
-                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">
-                  Titre principal
-                </label>
-                <input
-                  type="text"
-                  value={currentSlide.headline}
-                  onChange={(e) => updateSlide("headline", e.target.value)}
-                  className="input-base w-full font-semibold"
-                />
-              </div>
-
-              {/* Subtext */}
-              <div>
-                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">
-                  Sous-texte
-                </label>
-                <input
-                  type="text"
-                  value={currentSlide.subtext}
-                  onChange={(e) => updateSlide("subtext", e.target.value)}
-                  className="input-base w-full"
-                />
-              </div>
-
-              {/* Duration slider */}
-              <div>
-                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-2">
-                  <Clock className="h-3 w-3" /> Duree : {currentSlide.duration}s
-                </label>
-                <input
-                  type="range"
-                  min={2}
-                  max={6}
-                  step={0.5}
-                  value={currentSlide.duration}
-                  onChange={(e) => updateSlide("duration", parseFloat(e.target.value))}
-                  className="w-full accent-brand-500"
-                />
-                <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
-                  <span>2s</span><span>4s</span><span>6s</span>
-                </div>
-              </div>
-
-              {/* Animation selector */}
-              <div>
-                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
-                  Animation
-                </label>
-                <div className="flex gap-2">
-                  {ANIMATIONS.map((anim) => (
-                    <button
-                      key={anim.id}
-                      onClick={() => updateSlide("animation", anim.id)}
-                      className={cn(
-                        "flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[11px] font-medium transition-all",
-                        currentSlide.animation === anim.id
-                          ? "bg-brand-500 text-white shadow-sm"
-                          : "bg-gray-50 text-gray-500 hover:bg-gray-100"
-                      )}
-                    >
-                      <anim.icon className="h-4 w-4" />
-                      {anim.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Render buttons */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => handleRenderSlide(activeSlide)}
-                  disabled={renderProgress[activeSlide]}
-                  className="btn-primary flex-1 py-2.5"
-                >
-                  {renderProgress[activeSlide] ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Rendu en cours...</>
-                  ) : (
-                    <><Image className="h-4 w-4" /> Rendre cette slide</>
-                  )}
-                </button>
-                <button
-                  onClick={handleRenderAll}
-                  disabled={pageState === "rendering"}
-                  className={cn(
-                    "flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all",
-                    "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-sm hover:shadow-md active:scale-[0.98]"
-                  )}
-                >
-                  {pageState === "rendering" ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Rendu...</>
-                  ) : (
-                    <><RefreshCw className="h-4 w-4" /> Toutes les slides</>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Video Section */}
-          {(pageState === "rendered" || pageState === "video_ready" || pageState === "rendering") && storyPlan && (
-            <div className="surface p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <Music className="h-4 w-4 text-brand-500" />
-                <h2 className="text-sm font-bold text-gray-900">Video Story</h2>
-              </div>
-
-              {/* Music mood selector */}
-              <div>
-                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
-                  Ambiance musicale
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {MUSIC_MOODS.map((mood) => (
-                    <button
-                      key={mood.id}
-                      onClick={() => setMusicMood(mood.id)}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium transition-all",
-                        musicMood === mood.id
-                          ? "bg-brand-500 text-white shadow-sm"
-                          : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                      )}
-                    >
-                      <span>{mood.emoji}</span> {mood.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Generate video button */}
-              {!videoUrl && (
-                <button
-                  onClick={handleGenerateVideo}
-                  disabled={pageState === "rendering"}
-                  className="btn-primary w-full py-3 text-sm font-bold"
-                >
-                  {pageState === "rendering" ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Generation video...</>
-                  ) : (
-                    <><Film className="h-4 w-4" /> Generer la video</>
-                  )}
-                </button>
-              )}
-
-              {/* Video player */}
-              {videoUrl && (
-                <div className="space-y-3">
-                  <div className="rounded-2xl overflow-hidden bg-black">
-                    <video
-                      src={videoUrl}
-                      controls
-                      className="w-full"
-                      style={{ maxHeight: 400 }}
-                    />
-                  </div>
-                  <a
-                    href={videoUrl}
-                    download="story.mp4"
-                    className={cn(
-                      "flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold w-full transition-all",
-                      "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm hover:shadow-md active:scale-[0.98]"
-                    )}
-                  >
-                    <Download className="h-4 w-4" /> Telecharger la video
-                  </a>
-                  <button
-                    onClick={() => {
-                      setPageState("initial");
-                      setBrief("");
-                      setStoryPlan(null);
-                      setVideoUrl(null);
-                      setActiveSlide(0);
-                      setRenderProgress({});
-                      localStorage.removeItem("optimus-story-state");
-                    }}
-                    className="flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold w-full bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
-                  >
-                    <RefreshCw className="h-4 w-4" /> Nouvelle Story
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ─── Right Column (40%) — Phone Preview ────────────── */}
-        <div className="sticky top-6" style={{ flex: "0 0 37%" }}>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-              Apercu en direct
-            </p>
-            {storyPlan && (
-              <button
-                onClick={() => setIsAutoPlaying(!isAutoPlaying)}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all",
-                  isAutoPlaying
-                    ? "bg-brand-500 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                )}
-              >
-                {isAutoPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-                {isAutoPlaying ? "Pause" : "Lecture"}
-              </button>
-            )}
-          </div>
-
-          <StoryPhonePreview
-            slides={storyPlan?.slides || []}
-            activeSlide={activeSlide}
-            onSlideChange={setActiveSlide}
-            pageState={pageState}
-          />
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

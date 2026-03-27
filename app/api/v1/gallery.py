@@ -17,16 +17,23 @@ router = APIRouter(prefix="/gallery", tags=["gallery"])
 
 @router.get("/images")
 async def list_images(
+    media_type: str | None = "all",
     user: User = Depends(RequirePermission("posts.read")),
     session: AsyncSession = Depends(get_session),
 ):
-    """List all generated images for the tenant."""
+    """List all generated images/videos for the tenant.
+
+    Query params:
+        media_type: "image", "video", or "all" (default "all")
+    """
     stmt = (
         select(GeneratedImage)
         .where(GeneratedImage.tenant_id == user.tenant_id)
-        .order_by(GeneratedImage.created_at.desc())
-        .limit(100)
     )
+    if media_type and media_type != "all":
+        stmt = stmt.where(GeneratedImage.media_type == media_type)
+    stmt = stmt.order_by(GeneratedImage.created_at.desc()).limit(100)
+
     result = await session.execute(stmt)
     images = result.scalars().all()
     return [
@@ -36,6 +43,7 @@ async def list_images(
             "technical_prompt": img.technical_prompt,
             "image_url": img.image_url,
             "aspect_ratio": img.aspect_ratio,
+            "media_type": img.media_type,
             "metadata": img.metadata_,
             "created_at": img.created_at.isoformat(),
         }

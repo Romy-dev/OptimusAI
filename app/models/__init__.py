@@ -20,6 +20,7 @@ from app.models.template import Template
 from app.models.workflow import Workflow
 from app.models.brand_profile import BrandProfile, ChannelCapability
 from app.models.gallery import GeneratedImage
+from app.models.story import Story
 from app.models.customer_profile import CustomerProfile
 from app.models.design_template import DesignTemplate, BrandDesignDNA
 from app.models.chat import ChatMessage
@@ -69,4 +70,5 @@ __all__ = [
     "OrderStatus",
     "PaymentMethod",
     "LoyaltyPoints",
+    "Story",
 ]
